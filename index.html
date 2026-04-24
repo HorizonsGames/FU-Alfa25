@@ -20859,7 +20859,17 @@ window.tutorialManager = (() => {
             };
         }
 
-        // Research (tech tree)
+        // Research — patch startTechResearch (tech tree) which is what step 7 requires.
+        // startResearch() is ship-class research only and does NOT satisfy the 'research' waitFor.
+        const origStartTechResearch = window.game.startTechResearch ? window.game.startTechResearch.bind(window.game) : null;
+        if (origStartTechResearch) {
+            window.game.startTechResearch = function(techId) {
+                origStartTechResearch(techId);
+                completeAction('research');
+            };
+        }
+
+        // Also patch startResearch (ship research) so it counts too — belt-and-suspenders
         const origStartResearch = window.game.startResearch ? window.game.startResearch.bind(window.game) : null;
         if (origStartResearch) {
             window.game.startResearch = function(name) {
