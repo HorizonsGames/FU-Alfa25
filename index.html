@@ -14003,6 +14003,8 @@ const SHIP_IMAGE_DATA = {
                 
                 console.log('Fleet created:', newFleet.name);
                 this.showNotification('✅ Fleet "' + newFleet.name + '" created!');
+                // Notify tutorial that a fleet was successfully created
+                if (window.tutorialManager) window.tutorialManager.completeAction('create_fleet');
                 
                 // Step 3: Open ship selection modal
                 this.openFleetShipSelector(fleetIndex);
@@ -20497,10 +20499,10 @@ window.tutorialManager = (() => {
             id: 'assemble_fleet',
             icon: '🚀',
             title: 'Assemble a Fleet',
-            body: `Ships in your hangar don't fight on their own — you must assemble them into a <strong style="color:#00d9ff;">Fleet</strong>.\n\nIn Ship Production, click the <strong style="color:#00d9ff;">My Fleet</strong> tab, then <strong style="color:#00ff88;">Create New Fleet</strong>. Add ships to your fleet by selecting them and assigning quantities.\n\nFleets can be given <strong style="color:#ffd700;">formations</strong>:\n• <strong>Offensive</strong> — +15% damage\n• <strong>Defensive</strong> — +5% damage, tougher hull\n• <strong>Balanced</strong> — standard stats`,
+            body: `Follow these steps to create your first fleet:\n\n<strong style="color:#00d9ff;">Step 1</strong> — Look at the <strong style="color:#ffd700;">Ship Production</strong> panel at the bottom of the screen.\n\n<strong style="color:#00d9ff;">Step 2</strong> — Click the <strong style="color:#00ff88;">MY FLEET</strong> tab (next to Build Ships).\n\n<strong style="color:#00d9ff;">Step 3</strong> — Click the <strong style="color:#00ff88;">➕ CREATE FLEET</strong> button on the right side of the Fleet Command bar.\n\n<strong style="color:#00d9ff;">Step 4</strong> — Enter a name for your fleet when prompted, then click OK.\n\n<strong style="color:#00d9ff;">Step 5</strong> — Add ships to your fleet from the ship selector that opens.`,
             hint: 'Fleets earn XP from battles and level up — a veteran fleet hits much harder.',
-            target: '#createFleetBtn',
-            position: 'left',
+            target: null,
+            position: 'center',
             waitFor: 'create_fleet'
         },
         // ── 10. Commander Purchases ──────────────────────────────────────
@@ -20519,10 +20521,10 @@ window.tutorialManager = (() => {
             id: 'assign_commanders',
             icon: '📌',
             title: 'Assign Commanders',
-            body: `Commanders do nothing sitting in your collection — assign them to <strong style="color:#00d9ff;">planets</strong> or <strong style="color:#00ff88;">fleets</strong> to activate their bonuses.\n\n<strong>To assign to a planet:</strong> Go to your Owned planet list, select a planet, and use the <strong style="color:#ffd700;">Assign Commander</strong> button.\n\n<strong>To assign to a fleet:</strong> Open My Fleet, select a fleet, and click <strong style="color:#ffd700;">Assign Commander</strong> on the fleet card.\n\nA commander assigned to a fleet boosts its <strong style="color:#ff4444;">damage</strong> and <strong style="color:#4a9eff;">shields</strong>. One assigned to a planet boosts its <strong style="color:#00ff88;">resource output</strong> and <strong style="color:#ff8800;">defense</strong>.`,
-            hint: 'You can only assign one commander per planet or fleet — choose based on your needs.',
-            target: '#planetTabOwned',
-            position: 'right',
+            body: `Commanders do nothing sitting in your collection — assign them to <strong style="color:#00d9ff;">planets</strong> or <strong style="color:#00ff88;">fleets</strong> to activate their bonuses.\n\n<strong style="color:#00d9ff;">To assign to a Planet:</strong>\n1. Click <strong style="color:#ffd700;">COMMANDERS</strong> in the header\n2. Go to the <strong style="color:#ffd700;">Collection</strong> tab\n3. Find a commander and click <strong style="color:#00ff88;">Assign to Planet</strong>\n4. Select which planet from the list that appears\n\n<strong style="color:#00d9ff;">To assign to a Fleet:</strong>\n1. Open <strong style="color:#ffd700;">Ship Production → My Fleet</strong>\n2. Find a fleet card and click <strong style="color:#00ff88;">⭐ Assign Commander</strong>\n3. Pick a commander from the list\n\nPlanet assignment boosts <strong style="color:#00ff88;">resource output</strong> and <strong style="color:#ff8800;">defense</strong>. Fleet assignment boosts <strong style="color:#ff4444;">damage</strong> and <strong style="color:#4a9eff;">shields</strong>.`,
+            hint: 'You can only assign one commander per planet or fleet — choose the right commander for the job.',
+            target: '.header-commanders-btn',
+            position: 'below',
             waitFor: null
         },
         // ── 12. Commander Stacking ───────────────────────────────────────
@@ -20980,16 +20982,8 @@ window.tutorialManager = (() => {
             };
         }
 
-        // Fleet creation
-        const origCreateFleet = window.game.createFleet ? window.game.createFleet.bind(window.game) : null;
-        if (origCreateFleet) {
-            window.game.createFleet = function(...args) {
-                origCreateFleet(...args);
-                completeAction('create_fleet');
-            };
-        }
-        // Also catch fleet creation via addFleetFromTemplate or assembleFleet if they exist
-        ['addFleetFromTemplate', 'assembleFleet', 'addNewFleet'].forEach(fn => {
+        // Fleet creation — patch secondary methods (createNewFleet handled via direct injection below)
+        ['createFleet', 'addFleetFromTemplate', 'assembleFleet', 'addNewFleet'].forEach(fn => {
             if (window.game[fn]) {
                 const orig = window.game[fn].bind(window.game);
                 window.game[fn] = function(...args) {
