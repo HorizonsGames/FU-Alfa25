@@ -20354,8 +20354,8 @@ window.addEventListener('DOMContentLoaded', () => {
 <!-- Tutorial Dialog Box -->
 <div id="tutorialDialog" style="display:none; position:fixed; z-index:20000; width:420px; background:linear-gradient(135deg, #0d1526, #131f35); border:1px solid rgba(0,217,255,0.5); border-radius:12px; box-shadow:0 0 40px rgba(0,217,255,0.25), 0 8px 32px rgba(0,0,0,0.6); font-family:'Rajdhani',sans-serif; overflow:hidden;">
 
-    <!-- Header bar -->
-    <div style="background:linear-gradient(135deg, rgba(0,217,255,0.15), rgba(0,255,136,0.08)); border-bottom:1px solid rgba(0,217,255,0.2); padding:12px 16px; display:flex; align-items:center; justify-content:space-between;">
+    <!-- Header bar — grab here to drag the window -->
+    <div id="tutorialDragHandle" style="background:linear-gradient(135deg, rgba(0,217,255,0.15), rgba(0,255,136,0.08)); border-bottom:1px solid rgba(0,217,255,0.2); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; cursor:grab; user-select:none;" title="Drag to reposition">
         <div style="display:flex; align-items:center; gap:10px;">
             <span style="font-size:20px;" id="tutStepIcon">🚀</span>
             <div>
@@ -20365,6 +20365,7 @@ window.addEventListener('DOMContentLoaded', () => {
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
             <div style="font-size:11px; color:#8ba3c7;" id="tutStepCounter">Step 1 / 9</div>
+            <span style="font-size:11px; color:rgba(139,163,199,0.45); letter-spacing:1px;" title="Drag header to move • Double-click to re-center">⠿</span>
             <button onclick="window.tutorialManager.skip()" title="Skip Tutorial" style="background:none; border:1px solid rgba(139,163,199,0.3); color:#8ba3c7; border-radius:4px; padding:2px 8px; cursor:pointer; font-size:11px; font-family:'Rajdhani',sans-serif;">Skip</button>
         </div>
     </div>
@@ -20612,12 +20613,17 @@ window.tutorialManager = (() => {
     const qs = sel => document.querySelector(sel);
 
     // ── Position dialog relative to spotlight ─────────────────────────
+    // Track whether the player has manually dragged the dialog.
+    // If they have, positionDialog() won't auto-reposition it.
+    let dialogDragged = false;
+
     function positionDialog(targetEl, position) {
+        // If the player has manually repositioned the dialog, respect their choice.
+        if (dialogDragged) return;
+
         const dlg = el('tutorialDialog');
 
-        // Always display in the center of the map area so it never
-        // covers the sidebar UI elements the player needs to interact with.
-        // The spotlight still highlights the relevant element independently.
+        // Default: center over the galaxy map so it doesn't cover sidebars.
         const mapEl = document.getElementById('galaxyMap') || document.getElementById('mapContainer') || document.getElementById('map');
         if (mapEl) {
             const mr = mapEl.getBoundingClientRect();
@@ -20627,11 +20633,95 @@ window.tutorialManager = (() => {
             dlg.style.left = Math.round(mr.left + (mr.width  - dw) / 2) + 'px';
             dlg.style.top  = Math.round(mr.top  + (mr.height - dh) / 2) + 'px';
         } else {
-            // Fallback: true screen center
             dlg.style.top  = '50%';
             dlg.style.left = '50%';
             dlg.style.transform = 'translate(-50%, -50%)';
         }
+    }
+
+    // ── Drag-to-reposition logic ───────────────────────────────────────
+    // Initialised once after the DOM is ready.
+    let dragInitialised = false;
+    function initDrag() {
+        const dlg    = el('tutorialDialog');
+        const handle = el('tutorialDragHandle');
+        if (!dlg || !handle || dragInitialised) return;
+        dragInitialised = true;
+
+        let dragging = false;
+        let startX = 0, startY = 0;   // pointer start position
+        let origL  = 0, origT  = 0;   // dialog top/left at drag start
+
+        function getDialogPos() {
+            // Read current pixel position, handling the transform-based centering fallback.
+            const style  = window.getComputedStyle(dlg);
+            const matrix = new DOMMatrix(style.transform);
+            const rect   = dlg.getBoundingClientRect();
+            return {
+                left: rect.left - matrix.m41,
+                top:  rect.top  - matrix.m42
+            };
+        }
+
+        function onPointerDown(e) {
+            // Only drag on left-button or touch; ignore clicks on the skip button.
+            if (e.target.tagName === 'BUTTON') return;
+            dragging = true;
+            dialogDragged = true;          // stop auto-repositioning from now on
+
+            dlg.style.transform = 'none'; // kill any translate(-50%,-50%) centering
+            const pos = getDialogPos();
+            dlg.style.left = pos.left + 'px';
+            dlg.style.top  = pos.top  + 'px';
+
+            const ptr = e.touches ? e.touches[0] : e;
+            startX = ptr.clientX;
+            startY = ptr.clientY;
+            origL  = parseFloat(dlg.style.left);
+            origT  = parseFloat(dlg.style.top);
+
+            handle.style.cursor = 'grabbing';
+            e.preventDefault();
+        }
+
+        function onPointerMove(e) {
+            if (!dragging) return;
+            const ptr = e.touches ? e.touches[0] : e;
+            const dx  = ptr.clientX - startX;
+            const dy  = ptr.clientY - startY;
+
+            // Clamp so dialog can't be dragged fully off-screen.
+            const maxL = window.innerWidth  - (dlg.offsetWidth  || 420);
+            const maxT = window.innerHeight - (dlg.offsetHeight || 50);
+            const newL = Math.max(0, Math.min(maxL, origL + dx));
+            const newT = Math.max(0, Math.min(maxT, origT + dy));
+
+            dlg.style.left = newL + 'px';
+            dlg.style.top  = newT + 'px';
+            e.preventDefault();
+        }
+
+        function onPointerUp() {
+            if (!dragging) return;
+            dragging = false;
+            handle.style.cursor = 'grab';
+        }
+
+        // Mouse events
+        handle.addEventListener('mousedown',  onPointerDown);
+        document.addEventListener('mousemove', onPointerMove);
+        document.addEventListener('mouseup',   onPointerUp);
+
+        // Touch events (mobile / touchscreen)
+        handle.addEventListener('touchstart',  onPointerDown, { passive: false });
+        document.addEventListener('touchmove',  onPointerMove, { passive: false });
+        document.addEventListener('touchend',   onPointerUp);
+
+        // Double-click the header to snap back to default centre position.
+        handle.addEventListener('dblclick', () => {
+            dialogDragged = false;
+            positionDialog(null, 'center');
+        });
     }
 
     // ── Spotlight a target element ─────────────────────────────────────
@@ -20722,8 +20812,10 @@ window.tutorialManager = (() => {
         active = true;
         currentStep = 0;
         completedActions = {};
+        dialogDragged = false;   // reset position on fresh start
         el('tutorialOverlay').style.display = 'block';
         el('tutorialDialog').style.display = 'block';
+        initDrag();              // attach drag handlers (safe to call multiple times — guards itself via handle check)
         renderStep(0);
         patchGameFunctions();
         // Grant 4 common commanders to new players
