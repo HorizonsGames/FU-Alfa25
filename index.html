@@ -4896,7 +4896,7 @@
             
             <!-- Build Tabs -->
             <div class="fleet-tabs" style="margin-bottom: 12px;">
-                <button class="fleet-tab active" onclick="window.game.switchBuildTab('build')">Build Ships</button>
+                <button class="fleet-tab active" id="fleetTabBuildShips" onclick="window.game.switchBuildTab('build')">Build Ships</button>
                 <button class="fleet-tab" id="fleetTabMyFleet" onclick="window.game.switchBuildTab('fleet')">My Fleet</button>
                 <button class="fleet-tab" onclick="window.game.switchBuildTab('maintenance')">Maintenance</button>
             </div>
@@ -4917,6 +4917,7 @@
                                 ⚔️ Fleet Duel
                             </button>
                             <button 
+                                id="createFleetBtn"
                                 onclick="window.game.createNewFleet()" 
                                 style="padding: 10px 20px; 
                                        font-size: 13px; 
@@ -20487,7 +20488,7 @@ window.tutorialManager = (() => {
             title: 'Build Your Fleet',
             body: `The <strong style="color:#00d9ff;">Ship Production</strong> panel at the bottom lets you build combat vessels. Click <strong style="color:#00d9ff;">Build Ships</strong> and queue your first ship.\n\nStart small — <strong style="color:#ffd700;">Drones</strong> and <strong style="color:#ffd700;">Scout Ships</strong> are cheap and fast. Upgrade to <strong style="color:#ff8800;">Frigates</strong>, <strong style="color:#ff4444;">Cruisers</strong>, and <strong style="color:#ff00ff;">Carriers</strong> as your economy grows.`,
             hint: 'Ships are built in queues — you can queue multiple at once.',
-            target: '.fleet-panel .panel-title',
+            target: '#fleetTabBuildShips',
             position: 'left',
             waitFor: 'build_ship'
         },
@@ -20498,7 +20499,7 @@ window.tutorialManager = (() => {
             title: 'Assemble a Fleet',
             body: `Ships in your hangar don't fight on their own — you must assemble them into a <strong style="color:#00d9ff;">Fleet</strong>.\n\nIn Ship Production, click the <strong style="color:#00d9ff;">My Fleet</strong> tab, then <strong style="color:#00ff88;">Create New Fleet</strong>. Add ships to your fleet by selecting them and assigning quantities.\n\nFleets can be given <strong style="color:#ffd700;">formations</strong>:\n• <strong>Offensive</strong> — +15% damage\n• <strong>Defensive</strong> — +5% damage, tougher hull\n• <strong>Balanced</strong> — standard stats`,
             hint: 'Fleets earn XP from battles and level up — a veteran fleet hits much harder.',
-            target: '#fleetTabMyFleet',
+            target: '#createFleetBtn',
             position: 'left',
             waitFor: 'create_fleet'
         },
