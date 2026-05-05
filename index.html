@@ -256,6 +256,17 @@
             50% { box-shadow: 0 0 80px rgba(239, 68, 68, 0.9), inset 0 0 60px rgba(0, 0, 0, 0.5); }
         }
         
+        /* ── World Boss Ambient ─────────────────────────────────────── */
+        body.world-boss-active .space-bg {
+            filter: hue-rotate(280deg) brightness(0.65) saturate(1.4);
+            transition: filter 1.5s ease;
+        }
+        body.world-boss-active .header {
+            border-color: rgba(255, 51, 102, 0.6) !important;
+            box-shadow: 0 0 30px rgba(255, 51, 102, 0.2) !important;
+        }
+        #worldBossHUD button:hover { filter: brightness(1.15); }
+        
         @keyframes catastrophicShake {
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-5px) rotate(-5deg); }
@@ -4680,6 +4691,13 @@
                     <div class="header-button-icon">🏛️</div>
                     
                 </div>
+
+                <!-- Rift Boss Button -->
+                <div class="header-button" id="worldBossBtn" onclick="if(window.game) window.game.openWorldBossTriggerPanel()" title="Rift Boss — Guild Event" style="background: linear-gradient(135deg, rgba(255,51,102,0.2), rgba(255,100,0,0.15)); position:relative;">
+                    <div class="header-button-icon">🌀</div>
+                    <div style="font-size:8px;color:#ff6680;text-align:center;margin-top:1px;font-weight:700;letter-spacing:0.5px;">RIFT</div>
+                    <div id="worldBossBtnBadge" style="display:none;position:absolute;top:-4px;right:-4px;width:10px;height:10px;background:#ff3366;border-radius:50%;animation:pulse-glow 1.5s ease-in-out infinite;"></div>
+                </div>
                 
                 <!-- Tech Tree Button -->
                 <div class="header-button" onclick="if(typeof game !== 'undefined') game.openTechTree()" title="Technology Tree" style="background: linear-gradient(135deg, rgba(0, 217, 255, 0.2), rgba(0, 255, 136, 0.2));">
@@ -5053,15 +5071,25 @@
             <!-- Crafting View -->
             <div id="researchViewCrafting" class="research-view" style="display: none;">
                 <div class="detail-section">
-                    <div class="section-title">🔨 Crafting System</div>
-                    <div style="text-align: center; padding: 60px 20px;">
-                        <div style="font-size: 64px; margin-bottom: 20px;">🔨</div>
-                        <h3 style="color: var(--accent-primary); margin-bottom: 12px; font-family: 'Orbitron', sans-serif;">Coming Soon!</h3>
-                        <p style="color: var(--text-secondary); font-size: 14px;">
-                            The Crafting system is currently under development.<br>
-                            Check back later for updates!
-                        </p>
+                    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+                        <span>🔨 Crafting Workshop</span>
+                        <span id="researchCraftingMatCount" style="font-size:11px;color:var(--text-secondary);font-weight:400;"></span>
                     </div>
+
+                    <!-- Active Bonuses strip -->
+                    <div id="researchActiveBonuses" style="margin-bottom:10px;"></div>
+
+                    <!-- Category filter -->
+                    <div id="researchCraftingCats" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;"></div>
+
+                    <!-- Queue -->
+                    <div id="researchCraftingQueue" style="display:none;margin-bottom:12px;">
+                        <div style="font-size:11px;font-weight:700;color:var(--accent-warning);margin-bottom:6px;">⚙️ In Progress</div>
+                        <div id="researchCraftingQueueList"></div>
+                    </div>
+
+                    <!-- Recipe grid -->
+                    <div id="researchCraftingGrid" style="display:flex;flex-direction:column;gap:10px;"></div>
                 </div>
             </div>
             
@@ -5337,6 +5365,7 @@
             <div class="market-tabs">
                 <button class="market-tab active" onclick="marketUI.switchTab('buy')" id="marketTabBuy">Buy Resources</button>
                 <button class="market-tab" onclick="marketUI.switchTab('sell')" id="marketTabSell">Sell Resources</button>
+                <button class="market-tab" onclick="marketUI.switchTab('artifacts')" id="marketTabArtifacts">🔮 Artifacts</button>
                 <button class="market-tab" onclick="marketUI.switchTab('myListings')" id="marketTabMyListings">My Listings</button>
             </div>
             
@@ -5394,6 +5423,15 @@
                         <div style="font-size: 12px; color: var(--text-secondary);">Manage your sell orders</div>
                     </div>
                     <div id="myListingsContainer"></div>
+                </div>
+
+                <!-- Artifacts Tab -->
+                <div id="marketViewArtifacts" class="market-view" style="display: none;">
+                    <div class="market-info-banner">
+                        <div style="font-size: 14px; font-weight: 700; margin-bottom: 4px;">🔮 Artifact Marketplace</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">Buy artifacts from other commanders — including Void Shards and Void Portals</div>
+                    </div>
+                    <div id="artifactMarketListings"></div>
                 </div>
             </div>
         </div>
@@ -5998,6 +6036,22 @@
                 repeatable: false,
             },
 
+            // ── VOID BOSS ────────────────────────────────────────────────
+            voidPortalRecipe: {
+                id: 'voidPortalRecipe',
+                name: 'Void Portal',
+                icon: '🌀',
+                category: 'voidboss',
+                description: 'Fuse 5 Void Shards harvested from the Fracture Herald into a swirling Void Portal. Using it immediately opens the Void Boss encounter — a threat beyond the Herald itself. You may also sell the Portal on the Player Market.',
+                ingredients: [
+                    { artifactId: 'voidShard', qty: 5 },
+                ],
+                result: { type: 'grantItem', artifactId: 'voidPortal' },
+                creditCost: 0,
+                craftTime: 30,
+                repeatable: true,
+            },
+
             // ── SHIP SCHEMATICS ─────────────────────────────────────────
             rumRunner: {
                 id: 'rumRunner',
@@ -6024,6 +6078,7 @@
             planet:    { label: '🌍 Planet Upgrades',   color: '#00ff88' },
             legendary: { label: '💎 Legendary',         color: '#ffd700' },
             ship:      { label: '🚀 Ship Schematics',   color: '#00d9ff' },
+            voidboss:  { label: '🌀 Void Boss',         color: '#a855f7' },
         };
 
         const CRAFTING_SAVE_KEY = 'fu_crafting_v1';
@@ -9896,6 +9951,43 @@
             getMyListings(username) {
                 return this.listings.filter(l => l.seller === username);
             }
+
+            // ── Artifact listings ────────────────────────────────────────
+            createArtifactListing(seller, artifactId, artifactName, artifactIcon, price, inventoryItemId) {
+                const listing = {
+                    id: this.nextListingId++,
+                    seller,
+                    listingType: 'artifact',
+                    artifactId,
+                    artifactName,
+                    artifactIcon,
+                    inventoryItemId,
+                    price,
+                    createdAt: new Date().toISOString(),
+                    status: 'active'
+                };
+                this.listings.push(listing);
+                this.saveMarket();
+                return { success: true, listing };
+            }
+
+            getActiveArtifactListings() {
+                return this.listings
+                    .filter(l => l.status === 'active' && l.listingType === 'artifact')
+                    .sort((a, b) => a.price - b.price);
+            }
+
+            buyArtifactListing(listingId, buyer) {
+                const listing = this.listings.find(l => l.id === listingId);
+                if (!listing || listing.listingType !== 'artifact') return { success: false, error: 'Listing not found' };
+                if (listing.status !== 'active') return { success: false, error: 'Listing no longer available' };
+                if (listing.seller === buyer) return { success: false, error: 'Cannot buy your own listing' };
+                listing.status = 'sold';
+                listing.buyer = buyer;
+                listing.soldAt = new Date().toISOString();
+                this.saveMarket();
+                return { success: true, listing };
+            }
         }
         
         const marketManager = new MarketManager();
@@ -9927,6 +10019,7 @@
                 if (tab === 'buy') this.renderBuyListings();
                 if (tab === 'sell') this.renderSellForm();
                 if (tab === 'myListings') this.renderMyListings();
+                if (tab === 'artifacts') this.renderArtifactListings();
             }
             
             selectResource(resource) {
@@ -10018,6 +10111,67 @@
                 }, 100);
             }
             
+            renderArtifactListings() {
+                const container = document.getElementById('artifactMarketListings');
+                if (!container) return;
+                const listings = marketManager.getActiveArtifactListings();
+                if (listings.length === 0) {
+                    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">No artifacts listed. Sell yours from your Inventory!</div>';
+                    return;
+                }
+                container.innerHTML = listings.map(l => `
+                    <div class="market-listing-card" style="border-color:rgba(168,85,247,0.3);">
+                        <div class="market-listing-header">
+                            <div>
+                                <div class="market-listing-seller">Seller: ${l.seller}</div>
+                                <div class="market-listing-resource">${l.artifactIcon} ${l.artifactName}</div>
+                            </div>
+                            <div class="market-listing-quantity" style="font-size:28px;">${l.artifactIcon}</div>
+                        </div>
+                        <div class="market-listing-body">
+                            <div class="market-listing-price">
+                                <span style="font-size:12px;color:var(--text-secondary);">Price:</span>
+                                <span style="font-size:20px;font-weight:900;color:#a855f7;">₡ ${l.price.toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <button class="market-buy-btn" style="background:linear-gradient(135deg,#a855f7,#7c3aed);"
+                            onclick="marketUI.buyArtifactListing(${l.id})">Buy Artifact</button>
+                    </div>
+                `).join('');
+            }
+
+            buyArtifactListing(listingId) {
+                const listing = marketManager.listings.find(l => l.id === listingId);
+                if (!listing) return;
+                if (game.resources.credits < listing.price) {
+                    game.showNotification('⚠️ Insufficient credits!');
+                    return;
+                }
+                const result = marketManager.buyArtifactListing(listingId, game.playerData.username);
+                if (result.success) {
+                    game.resources.credits -= listing.price;
+                    // Grant artifact to buyer's inventory
+                    game.inventory.push({
+                        id: Date.now().toString() + Math.random().toString(36).slice(2),
+                        artifactId: listing.artifactId,
+                        foundAt: Date.now(),
+                        source: 'market',
+                        planetName: 'Player Market'
+                    });
+                    // If seller is the current player (single-player context), also give them credits
+                    if (listing.seller === game.playerData.username) {
+                        game.resources.credits += listing.price;
+                    }
+                    game.updateResources();
+                    game.renderInventory && game.renderInventory();
+                    game.saveGameState();
+                    game.showNotification(`✅ Purchased ${listing.artifactIcon} ${listing.artifactName} for ₡${listing.price.toLocaleString()}`);
+                    this.renderArtifactListings();
+                } else {
+                    game.showNotification(`⚠️ ${result.error}`);
+                }
+            }
+
             renderMyListings() {
                 const myListings = marketManager.getMyListings(game.playerData.username);
                 const container = document.getElementById('myListingsContainer');
@@ -10029,24 +10183,29 @@
                 
                 const resourceIcons = { metal: '⛏️', he3: '⚡', food: '🌾' };
                 
-                container.innerHTML = myListings.map(listing => `
-                    <div class="market-listing-card">
-                        <div class="market-listing-header">
-                            <div class="market-listing-resource">${resourceIcons[listing.resourceType]} ${listing.resourceType.toUpperCase()}</div>
-                            <div class="market-listing-status ${listing.status}">${listing.status.toUpperCase()}</div>
-                        </div>
-                        <div class="market-listing-body">
-                            <div>Quantity: ${listing.quantity.toLocaleString()}</div>
-                            <div>Price/unit: 💰 ${listing.pricePerUnit.toLocaleString()}</div>
-                            <div>Total: 💰 ${listing.totalPrice.toLocaleString()}</div>
-                        </div>
-                        ${listing.status === 'active' ? `
-                            <button class="market-cancel-btn" onclick="marketUI.cancelListing(${listing.id})">Cancel Listing</button>
-                        ` : ''}
-                    </div>
-                `).join('');
+                container.innerHTML = myListings.map(listing => {
+                    const isArtifact = listing.listingType === 'artifact';
+                    const icon = isArtifact ? listing.artifactIcon : resourceIcons[listing.resourceType];
+                    const label = isArtifact ? listing.artifactName : listing.resourceType?.toUpperCase();
+                    const priceDisplay = isArtifact
+                        ? `<div>Price: 💰 ${listing.price?.toLocaleString()}</div>`
+                        : `<div>Quantity: ${listing.quantity?.toLocaleString()}</div>
+                           <div>Price/unit: 💰 ${listing.pricePerUnit?.toLocaleString()}</div>
+                           <div>Total: 💰 ${listing.totalPrice?.toLocaleString()}</div>`;
+                    return `
+                        <div class="market-listing-card">
+                            <div class="market-listing-header">
+                                <div class="market-listing-resource">${icon} ${label}</div>
+                                <div class="market-listing-status ${listing.status}">${listing.status.toUpperCase()}</div>
+                            </div>
+                            <div class="market-listing-body">${priceDisplay}</div>
+                            ${listing.status === 'active' ? `
+                                <button class="market-cancel-btn" onclick="marketUI.cancelListing(${listing.id})">Cancel Listing</button>
+                            ` : ''}
+                        </div>`;
+                }).join('');
             }
-            
+
             createListing() {
                 const resourceType = document.getElementById('sellResource').value;
                 const quantity = parseInt(document.getElementById('sellQuantity').value) || 0;
@@ -10118,12 +10277,27 @@
                 const result = marketManager.cancelListing(listingId, game.playerData.username);
                 
                 if (result.success) {
-                    // Return resources to player
-                    const resourceKey = listing.resourceType === 'he3' ? 'he3' : listing.resourceType;
-                    game.resources[resourceKey] += listing.quantity;
-                    game.updateResources();
-                    
-                    game.showNotification('✅ Listing cancelled, resources returned');
+                    if (listing.listingType === 'artifact') {
+                        // Return artifact to inventory
+                        if (ARTIFACTS[listing.artifactId]) {
+                            game.inventory.push({
+                                id: Date.now().toString() + Math.random().toString(36).slice(2),
+                                artifactId: listing.artifactId,
+                                foundAt: Date.now(),
+                                source: 'marketReturn',
+                                planetName: 'Market Return'
+                            });
+                            game.renderInventory && game.renderInventory();
+                            game.saveGameState();
+                        }
+                        game.showNotification(`↩️ ${listing.artifactIcon} ${listing.artifactName} returned to your inventory`);
+                    } else {
+                        // Return resources to player
+                        const resourceKey = listing.resourceType === 'he3' ? 'he3' : listing.resourceType;
+                        game.resources[resourceKey] += listing.quantity;
+                        game.updateResources();
+                        game.showNotification('✅ Listing cancelled, resources returned');
+                    }
                     this.renderMyListings();
                 } else {
                     game.showNotification(`⚠️ ${result.error}`);
@@ -11646,7 +11820,43 @@ const SHIP_IMAGE_DATA = {
                 tradeable: true,
                 marketValue: 500000,
                 image: 'assets/asset_055.jpg'
-            }
+            },
+
+            // ── WORLD BOSS DROPS ─────────────────────────────────────────
+            voidShard: {
+                id: 'voidShard',
+                name: 'Void Shard',
+                icon: '🔮',
+                type: 'crafting',
+                rarity: 0,
+                description: 'A crystalline fragment torn from the Fracture Herald upon its defeat. Radiates a cold, distorting field that warps local spacetime. Combine 5 to craft a Void Portal — a gateway to the ultimate boss encounter.',
+                effect: 'crafting',
+                tradeable: true,
+                marketValue: 250000,
+            },
+            heraldSeal: {
+                id: 'heraldSeal',
+                name: "Herald's Seal",
+                icon: '🏵️',
+                type: 'permanent',
+                rarity: 0,
+                description: 'A cosmetic badge proving you bested the Fracture Herald. Displayed on your profile and grants a permanent +5% fleet damage bonus to all your fleets.',
+                effect: 'permanent',
+                bonuses: { fleetDamage: 5 },
+                tradeable: false,
+                marketValue: 0,
+            },
+            voidPortal: {
+                id: 'voidPortal',
+                name: 'Void Portal',
+                icon: '🌀',
+                type: 'consumable',
+                rarity: 0,
+                description: 'A swirling gateway to the Void Dimension, forged from 5 crystallised Void Shards. Using this item opens the Void Boss encounter — an even deadlier threat than the Fracture Herald. Can be sold to other commanders.',
+                effect: 'openVoidBoss',
+                tradeable: true,
+                marketValue: 1500000,
+            },
         };
 
         class Game {
@@ -11724,6 +11934,20 @@ const SHIP_IMAGE_DATA = {
                 this.guildRole = null; // 'leader', 'officer', 'member'
                 this.guildInventory = []; // Shared guild inventory
                 this.guildName = 'Galactic Pioneers'; // Guild name
+                
+                // ── WORLD BOSS STATE ────────────────────────────────────
+                this.worldBoss = {
+                    isActive: false,
+                    name: 'The Fracture Herald',
+                    icon: '🌀',
+                    maxHp: 500000,
+                    currentHp: 500000,
+                    phase: 1,
+                    cooldownUntil: 0,
+                    totalDmgDealt: 0,
+                    participants: {},   // username → dmgDealt (for guild loot split)
+                    counterDmgInterval: null,
+                };
                 
                 // Commander System
                 this.commanders = []; // Owned commanders
@@ -11884,6 +12108,31 @@ const SHIP_IMAGE_DATA = {
                     } else {
                         this.unlockedShips = [];
                     }
+
+                    // Load world boss state
+                    if (playerData.gameState.worldBoss) {
+                        const saved = playerData.gameState.worldBoss;
+                        this.worldBoss = {
+                            isActive: saved.isActive || false,
+                            name: saved.name || 'The Fracture Herald',
+                            icon: saved.icon || '🌀',
+                            maxHp: saved.maxHp || 500000,
+                            currentHp: saved.currentHp || 500000,
+                            phase: saved.phase || 1,
+                            cooldownUntil: saved.cooldownUntil || 0,
+                            totalDmgDealt: saved.totalDmgDealt || 0,
+                            participants: saved.participants || {},
+                            counterDmgInterval: null,
+                        };
+                        // Resume active boss encounter after reload
+                        if (this.worldBoss.isActive) {
+                            setTimeout(() => {
+                                document.body.classList.add('world-boss-active');
+                                this.showWorldBossModal();
+                                this._startBossCounterDamage();
+                            }, 1500);
+                        }
+                    }
                     
                     console.log('🎬 Calling init()...');
                     this.init();
@@ -11907,7 +12156,8 @@ const SHIP_IMAGE_DATA = {
                     guildInventory: this.guildInventory || [],
                     guildName: this.guildName || 'Galactic Pioneers',
                     temporaryBonuses: this.temporaryBonuses || [],
-                    unlockedShips: this.unlockedShips || []
+                    unlockedShips: this.unlockedShips || [],
+                    worldBoss: this.worldBoss || null,
                 };
             }
             
@@ -11976,6 +12226,16 @@ const SHIP_IMAGE_DATA = {
                             auth.saveGameState();
                         }
                     }, 30000);
+
+                    // World Boss HUD live-refresh (every 2s when active)
+                    setInterval(() => {
+                        if (this.worldBoss && this.worldBoss.isActive) {
+                            this.renderWorldBossHUD();
+                        }
+                        // Update header button badge
+                        const badge = document.getElementById('worldBossBtnBadge');
+                        if (badge) badge.style.display = (this.worldBoss && this.worldBoss.isActive) ? 'block' : 'none';
+                    }, 2000);
                     
                     console.log('✅ All game intervals started successfully');
                 } catch (error) {
@@ -14869,6 +15129,397 @@ const SHIP_IMAGE_DATA = {
                 
                 this.fleetVsFleet(attackerIndex, defenderIndex);
             }
+
+            // ═══════════════════════════════════════════════════════════
+            // WORLD BOSS SYSTEM — Option D (Guild-triggered encounter)
+            // ═══════════════════════════════════════════════════════════
+
+            openWorldBossTriggerPanel() {
+                if (!this.guildId) {
+                    this.showNotification('⚠️ You must be in a guild to trigger a World Boss encounter!');
+                    return;
+                }
+                if (this.worldBoss.isActive) {
+                    this.showWorldBossModal();
+                    return;
+                }
+                const cooldownLeft = this.worldBoss.cooldownUntil - Date.now();
+                if (cooldownLeft > 0) {
+                    const hrs  = Math.floor(cooldownLeft / 3600000);
+                    const mins = Math.floor((cooldownLeft % 3600000) / 60000);
+                    this.showNotification(`⏳ World Boss on cooldown — ${hrs}h ${mins}m remaining`);
+                    return;
+                }
+
+                const modal = document.createElement('div');
+                modal.id = 'wbTriggerModal';
+                modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:10006;display:flex;align-items:center;justify-content:center;';
+                modal.innerHTML = `
+                    <div style="max-width:480px;width:90%;background:var(--bg-secondary);border:2px solid #ff3366;border-radius:16px;overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,rgba(255,51,102,0.2),rgba(255,100,0,0.1));padding:20px 24px;border-bottom:1px solid rgba(255,51,102,0.4);">
+                            <div style="font-family:'Orbitron',sans-serif;font-size:20px;color:#ff3366;letter-spacing:2px;">🌀 SUMMON RIFT BOSS</div>
+                            <div style="font-size:12px;color:#8ba3c7;margin-top:4px;">Guild event — all members may participate</div>
+                        </div>
+                        <div style="padding:24px;">
+                            <div style="background:rgba(255,51,102,0.08);border:1px solid rgba(255,51,102,0.3);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:1.6;color:#e8f0ff;">
+                                <div style="font-weight:700;color:#ff3366;margin-bottom:8px;">⚔️ The Fracture Herald</div>
+                                Summon the Herald to your sector. All guild members online can attack it with their fleets.
+                                Defeat it within 24 hours to earn exclusive loot — Void Shards, artifacts, credits and metal.
+                                <div style="margin-top:10px;color:#ff8800;">⚠️ Phase 2 &amp; 3 deal counter-damage to your fleets each attack wave!</div>
+                            </div>
+                            <div style="display:flex;gap:12px;">
+                                <button onclick="document.getElementById('wbTriggerModal').remove()"
+                                    style="flex:1;padding:12px;background:transparent;border:1px solid #333;border-radius:8px;color:#8ba3c7;cursor:pointer;font-weight:700;">
+                                    Cancel
+                                </button>
+                                <button onclick="window.game.spawnWorldBoss(); document.getElementById('wbTriggerModal').remove();"
+                                    style="flex:2;padding:12px;background:linear-gradient(135deg,#ff3366,#ff6600);border:none;border-radius:8px;color:white;font-family:'Orbitron',sans-serif;font-weight:700;cursor:pointer;letter-spacing:1px;font-size:13px;">
+                                    🌀 SUMMON HERALD
+                                </button>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.appendChild(modal);
+            }
+
+            spawnWorldBoss() {
+                if (this.worldBoss.isActive) return;
+                this.worldBoss.isActive      = true;
+                this.worldBoss.currentHp     = this.worldBoss.maxHp;
+                this.worldBoss.phase         = 1;
+                this.worldBoss.totalDmgDealt = 0;
+                this.worldBoss.participants  = {};
+                document.body.classList.add('world-boss-active');
+                this.showWorldBossModal();
+                this._startBossCounterDamage();
+                // Announce in guild chat
+                if (this.guildId && window.guildUI && window.guildUI.sendGuildMessage) {
+                    try {
+                        const origInput = document.getElementById('guildChatInput');
+                        if (origInput) {
+                            const prev = origInput.value;
+                            origInput.value = '🌀 ALERT: The Fracture Herald has been summoned! All guild members — deploy your fleets now!';
+                            window.guildUI.sendGuildMessage();
+                            origInput.value = prev;
+                        }
+                    } catch(e) { /* non-fatal */ }
+                }
+                this.showNotification('🌀 THE FRACTURE HERALD HAS EMERGED! Deploy your fleets from the boss HUD!');
+                this.saveGameState();
+            }
+
+            // Counter-damage tick — boss hits back every 15 s in phase 2+
+            _startBossCounterDamage() {
+                if (this.worldBoss.counterDmgInterval) {
+                    clearInterval(this.worldBoss.counterDmgInterval);
+                }
+                this.worldBoss.counterDmgInterval = setInterval(() => {
+                    if (!this.worldBoss.isActive) {
+                        clearInterval(this.worldBoss.counterDmgInterval);
+                        return;
+                    }
+                    if (this.worldBoss.phase < 2) return; // Phase 1 — no counter
+
+                    const counterRate = this.worldBoss.phase === 3 ? 0.12 : 0.06;
+                    let fleetsDamaged = 0;
+                    this.fleets.forEach(fleet => {
+                        if (!fleet || fleet.stacks.length === 0) return;
+                        fleet.stacks.forEach(stack => {
+                            const losses = Math.floor(stack.count * counterRate);
+                            stack.count = Math.max(0, stack.count - losses);
+                        });
+                        fleet.stacks = fleet.stacks.filter(s => s.count > 0);
+                        fleetsDamaged++;
+                    });
+                    if (fleetsDamaged > 0) {
+                        const phaseLabel = this.worldBoss.phase === 3 ? 'FRACTURE RAGE' : 'Phase 2';
+                        this.showNotification(`🔴 [${phaseLabel}] Herald counter-strikes! All fleets lose ${(counterRate*100).toFixed(0)}% ships!`);
+                        this.renderFleetList && this.renderFleetList();
+                        this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
+                        this.saveGameState();
+                    }
+                }, 15000); // every 15 seconds
+            }
+
+            attackWorldBoss(fleetIndex) {
+                if (!this.worldBoss.isActive) {
+                    this.showNotification('⚠️ No active World Boss encounter!');
+                    return;
+                }
+                const fleet = this.fleets[fleetIndex];
+                if (!fleet || fleet.stacks.length === 0) {
+                    this.showNotification('⚠️ That fleet has no ships!');
+                    return;
+                }
+
+                // Calculate fleet power (mirrors fleetVsFleet)
+                let power = 0;
+                fleet.stacks.forEach(s => {
+                    const ship = this.ships[s.shipType];
+                    if (ship) power += ship.damage * s.count;
+                });
+                const fb  = this.getFormationBonus(fleetIndex);
+                const lb  = this.getFleetLevelBonuses(fleetIndex);
+                power = Math.floor(power * (fb.damage || 1) * (lb.damage || 1));
+
+                // Apply HeraldSeal +5% if owned
+                if (this.inventory.some(i => i.artifactId === 'heraldSeal')) power = Math.floor(power * 1.05);
+
+                const dmg = Math.floor(power * (0.85 + Math.random() * 0.3));
+
+                // Track participant damage
+                const me = (this.currentPlayer && this.currentPlayer.username) || 'player';
+                this.worldBoss.participants[me] = (this.worldBoss.participants[me] || 0) + dmg;
+                this.worldBoss.totalDmgDealt   += dmg;
+                this.worldBoss.currentHp        = Math.max(0, this.worldBoss.currentHp - dmg);
+
+                // Immediate fleet losses: 3–8% on attack (scales with phase)
+                const atkLossRate = 0.03 + (this.worldBoss.phase - 1) * 0.025 + Math.random() * 0.02;
+                fleet.stacks.forEach(s => {
+                    s.count = Math.max(0, s.count - Math.floor(s.count * atkLossRate));
+                });
+                fleet.stacks = fleet.stacks.filter(s => s.count > 0);
+
+                // XP for participating fleet
+                this.addFleetExperience(fleetIndex, Math.floor(dmg / 100), '');
+
+                // Phase transitions
+                const pct = this.worldBoss.currentHp / this.worldBoss.maxHp;
+                if (pct <= 0.3 && this.worldBoss.phase < 3) {
+                    this.worldBoss.phase = 3;
+                    this.showNotification('🔴 FRACTURE RAGE — Herald enters Phase 3! Counter-strikes intensify!');
+                } else if (pct <= 0.6 && this.worldBoss.phase < 2) {
+                    this.worldBoss.phase = 2;
+                    this.showNotification('🟠 Herald enters Phase 2 — shields shattered! It fights back every 15s!');
+                    this._startBossCounterDamage(); // re-register with current phase
+                }
+
+                if (this.worldBoss.currentHp <= 0) {
+                    this.defeatWorldBoss();
+                    return;
+                }
+
+                this.renderWorldBossHUD();
+                this.showNotification(`⚔️ Dealt ${dmg.toLocaleString()} dmg! Boss HP: ${this.worldBoss.currentHp.toLocaleString()} | Phase ${this.worldBoss.phase}`);
+                this.renderFleetList && this.renderFleetList();
+                this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
+                this.saveGameState();
+            }
+
+            defeatWorldBoss() {
+                clearInterval(this.worldBoss.counterDmgInterval);
+                this.worldBoss.isActive       = false;
+                this.worldBoss.cooldownUntil  = Date.now() + 24 * 60 * 60 * 1000;
+                document.body.classList.remove('world-boss-active');
+                document.getElementById('worldBossHUD')?.remove();
+
+                // ── Build loot pool ──────────────────────────────────────
+                // All artifacts at 20% drop each, except 'fragment' at 5%
+                // Plus voidShard: 1 guaranteed per participant
+                // Each participant (guild member who attacked) gets 3 items
+                const BOSS_LOOT_POOL = [
+                    { id: 'equations',           weight: 20 },
+                    { id: 'virus',               weight: 20 },
+                    { id: 'lab',                 weight: 20 },
+                    { id: 'flora',               weight: 20 },
+                    { id: 'carbon',              weight: 20 },
+                    { id: 'webbing',             weight: 20 },
+                    { id: 'liquidAluminum',      weight: 20 },
+                    { id: 'dataCrystal',         weight: 20 },
+                    { id: 'primordialOoze',      weight: 20 },
+                    { id: 'basiliskVenom',       weight: 20 },
+                    { id: 'ancientPowerSupply',  weight: 20 },
+                    { id: 'seaUrchinPoison',     weight: 20 },
+                    { id: 'psychedelicMushrooms',weight: 20 },
+                    { id: 'ancientAudioDisc',    weight: 20 },
+                    { id: 'deathLily',           weight: 20 },
+                    { id: 'gold',                weight: 20 },
+                    { id: 'platinum',            weight: 20 },
+                    { id: 'mercury',             weight: 20 },
+                    { id: 'rumRunnerSchematic',  weight: 20 },
+                    { id: 'heraldSeal',          weight: 20 },
+                    { id: 'fragment',            weight: 5  },  // Ancient Artifact Fragment: 5%
+                ];
+                const totalWeight = BOSS_LOOT_POOL.reduce((s, e) => s + e.weight, 0);
+
+                const rollLootItem = () => {
+                    let roll = Math.random() * totalWeight;
+                    for (const entry of BOSS_LOOT_POOL) {
+                        roll -= entry.weight;
+                        if (roll <= 0) return entry.id;
+                    }
+                    return BOSS_LOOT_POOL[0].id;
+                };
+
+                const grantItemToMe = (artifactId, source) => {
+                    if (!ARTIFACTS[artifactId]) return;
+                    this.inventory.push({
+                        id: Date.now().toString() + Math.random().toString(36).slice(2),
+                        artifactId,
+                        foundAt: Date.now(),
+                        source,
+                    });
+                };
+
+                // Grant this player 3 random items + 1 voidShard
+                const grantedItems = [];
+                for (let i = 0; i < 3; i++) {
+                    const id = rollLootItem();
+                    grantItemToMe(id, 'worldBoss');
+                    grantedItems.push({ id, def: ARTIFACTS[id] });
+                }
+                grantItemToMe('voidShard', 'worldBoss');
+
+                // Credit/metal reward proportional to damage dealt
+                const credits = Math.floor(this.worldBoss.totalDmgDealt * 0.15);
+                const metal   = Math.floor(this.worldBoss.totalDmgDealt * 0.08);
+                this.resources.credits += credits;
+                this.resources.metal   += metal;
+                this.updateResources();
+                this.renderInventory && this.renderInventory();
+
+                // Victory modal
+                this._showBossVictoryModal(grantedItems, credits, metal);
+                this.showNotification(`🏆 FRACTURE HERALD DEFEATED! +₡${credits.toLocaleString()} +⛏️${metal.toLocaleString()} +3 artifacts +1 🔮 Void Shard!`);
+                this.saveGameState();
+            }
+
+            _showBossVictoryModal(grantedItems, credits, metal) {
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.93);z-index:10006;display:flex;align-items:center;justify-content:center;';
+                const itemsHTML = grantedItems.map(({ def }) =>
+                    `<div style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.25);border-radius:8px;padding:10px 14px;text-align:center;">
+                        <div style="font-size:24px;">${def ? def.icon : '📦'}</div>
+                        <div style="font-size:12px;font-weight:700;color:#ffd700;margin-top:4px;">${def ? def.name : 'Unknown'}</div>
+                    </div>`
+                ).join('');
+                modal.innerHTML = `
+                    <div style="max-width:520px;width:90%;background:var(--bg-secondary);border:2px solid #ffd700;border-radius:16px;overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,rgba(255,215,0,0.15),rgba(255,100,0,0.08));padding:24px;text-align:center;">
+                            <div style="font-size:48px;margin-bottom:8px;">🏆</div>
+                            <div style="font-family:'Orbitron',sans-serif;font-size:22px;color:#ffd700;letter-spacing:2px;">HERALD DEFEATED</div>
+                            <div style="font-size:12px;color:#8ba3c7;margin-top:6px;">The Fracture Herald has been banished from this sector</div>
+                        </div>
+                        <div style="padding:24px;">
+                            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#8ba3c7;margin-bottom:10px;">Your Rewards (3 items + 1 Void Shard)</div>
+                            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">${itemsHTML}</div>
+                            <div style="background:rgba(0,217,255,0.08);border:1px solid rgba(0,217,255,0.2);border-radius:8px;padding:12px;display:flex;justify-content:space-around;margin-bottom:20px;">
+                                <div style="text-align:center;"><div style="font-size:11px;color:#8ba3c7;">Credits</div><div style="font-size:18px;font-weight:900;color:#ffd700;">₡${credits.toLocaleString()}</div></div>
+                                <div style="text-align:center;"><div style="font-size:11px;color:#8ba3c7;">Metal</div><div style="font-size:18px;font-weight:900;color:#a0a0a0;">⛏️${metal.toLocaleString()}</div></div>
+                                <div style="text-align:center;"><div style="font-size:11px;color:#8ba3c7;">Void Shard</div><div style="font-size:18px;font-weight:900;color:#a855f7;">🔮 ×1</div></div>
+                            </div>
+                            <div style="font-size:11px;color:#8ba3c7;margin-bottom:16px;">💡 Collect 5 Void Shards → Craft a Void Portal in the ⚗️ Crafting Workshop</div>
+                            <button onclick="this.closest('div[style*=fixed]').remove()"
+                                style="width:100%;padding:14px;background:linear-gradient(135deg,#ffd700,#ff9500);border:none;border-radius:8px;color:black;font-family:'Orbitron',sans-serif;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:1px;">
+                                CLAIM REWARDS
+                            </button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(modal);
+            }
+
+            showWorldBossModal() {
+                document.getElementById('worldBossHUD')?.remove();
+                const hud = document.createElement('div');
+                hud.id = 'worldBossHUD';
+                hud.style.cssText = `
+                    position:fixed;top:84px;left:50%;transform:translateX(-50%);
+                    width:min(700px,92vw);background:rgba(8,5,18,0.95);
+                    border:1px solid rgba(255,51,102,0.55);border-radius:12px;
+                    padding:16px 20px;z-index:9500;backdrop-filter:blur(10px);
+                    box-shadow:0 0 40px rgba(255,51,102,0.25);
+                `;
+                hud.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:2px;color:#ff3366;">🌀 THE FRACTURE HERALD</span>
+                        <span id="bossPhaseLabel" style="font-size:12px;font-weight:700;color:#ff8800;">Phase 1</span>
+                        <button onclick="document.getElementById('worldBossHUD').style.display='none'"
+                            style="background:transparent;border:1px solid #333;border-radius:4px;color:#8ba3c7;padding:2px 8px;cursor:pointer;font-size:11px;">Minimise</button>
+                    </div>
+                    <div style="height:12px;background:rgba(255,255,255,0.07);border-radius:6px;overflow:hidden;margin-bottom:6px;">
+                        <div id="bossHpFill" style="height:100%;border-radius:6px;background:linear-gradient(90deg,#ff3366,#ff8800);transition:width 0.4s ease;box-shadow:0 0 10px rgba(255,51,102,0.4);width:100%;"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#8ba3c7;margin-bottom:12px;">
+                        <span id="bossHpText">${this.worldBoss.maxHp.toLocaleString()} / ${this.worldBoss.maxHp.toLocaleString()} HP</span>
+                        <span id="bossDmgText">Your damage: 0</span>
+                    </div>
+                    <div style="font-size:11px;color:#ff8800;margin-bottom:10px;" id="bossPhaseWarning"></div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;" id="bossFleetButtons"></div>
+                `;
+                document.body.appendChild(hud);
+                this.renderWorldBossHUD();
+            }
+
+            renderWorldBossHUD() {
+                const hud = document.getElementById('worldBossHUD');
+                if (!hud) return;
+                const pct = Math.max(0, this.worldBoss.currentHp / this.worldBoss.maxHp * 100);
+                const fill = document.getElementById('bossHpFill');
+                if (fill) fill.style.width = pct + '%';
+                const hpTxt = document.getElementById('bossHpText');
+                if (hpTxt) hpTxt.textContent = `${Math.max(0,this.worldBoss.currentHp).toLocaleString()} / ${this.worldBoss.maxHp.toLocaleString()} HP`;
+                const dmgTxt = document.getElementById('bossDmgText');
+                const me = (this.currentPlayer && this.currentPlayer.username) || 'player';
+                if (dmgTxt) dmgTxt.textContent = `Your damage: ${(this.worldBoss.participants[me] || 0).toLocaleString()}`;
+                const phaseLabel = document.getElementById('bossPhaseLabel');
+                const phaseWarn  = document.getElementById('bossPhaseWarning');
+                if (phaseLabel) {
+                    const colors = ['','#ff8800','#ff5500','#ff3366'];
+                    phaseLabel.textContent = `Phase ${this.worldBoss.phase}`;
+                    phaseLabel.style.color = colors[this.worldBoss.phase];
+                }
+                if (phaseWarn) {
+                    if (this.worldBoss.phase === 2) phaseWarn.textContent = '⚠️ Phase 2: Herald counter-strikes every 15s (−6% fleet per wave)';
+                    else if (this.worldBoss.phase === 3) phaseWarn.textContent = '🔴 FRACTURE RAGE: Counter-strikes intensified (−12% fleet per wave)!';
+                    else phaseWarn.textContent = '';
+                }
+                const btns = document.getElementById('bossFleetButtons');
+                if (btns) {
+                    btns.innerHTML = this.fleets.length === 0
+                        ? `<div style="font-size:12px;color:#8ba3c7;">Create fleets in the Fleet tab to attack the boss.</div>`
+                        : this.fleets.map((f, i) => {
+                            const hasShips = f.stacks && f.stacks.some(s => s.count > 0);
+                            return `<button onclick="window.game.attackWorldBoss(${i})"
+                                style="padding:7px 14px;font-size:11px;font-weight:700;
+                                background:${hasShips ? 'rgba(255,51,102,0.15)' : 'transparent'};
+                                border:1px solid ${hasShips ? '#ff3366' : '#444'};
+                                border-radius:6px;color:${hasShips ? '#ff6680' : '#555'};
+                                cursor:${hasShips ? 'pointer' : 'not-allowed'};transition:background 0.2s;"
+                                onmouseover="if(${hasShips})this.style.background='rgba(255,51,102,0.28)'"
+                                onmouseout="this.style.background='${hasShips ? 'rgba(255,51,102,0.15)' : 'transparent'}'">
+                                ⚔️ ${f.name || 'Fleet '+(i+1)}
+                            </button>`;
+                        }).join('');
+                }
+            }
+
+            // Called when a Void Portal item is used from inventory
+            useVoidPortal(itemId) {
+                const item = this.inventory.find(i => i.id === itemId);
+                if (!item || item.artifactId !== 'voidPortal') return;
+                if (this.worldBoss.isActive) {
+                    this.showNotification('⚠️ A boss encounter is already active!');
+                    return;
+                }
+                // Remove the portal item
+                this.inventory = this.inventory.filter(i => i.id !== itemId);
+                // Spawn a Void Boss (same mechanics, bigger HP, named differently)
+                this.worldBoss.isActive      = true;
+                this.worldBoss.name          = 'The Void Leviathan';
+                this.worldBoss.icon          = '🕳️';
+                this.worldBoss.maxHp         = 1500000;
+                this.worldBoss.currentHp     = 1500000;
+                this.worldBoss.phase         = 1;
+                this.worldBoss.totalDmgDealt = 0;
+                this.worldBoss.participants  = {};
+                this.worldBoss.cooldownUntil = Date.now() + 48 * 60 * 60 * 1000;
+                document.body.classList.add('world-boss-active');
+                this.showWorldBossModal();
+                this._startBossCounterDamage();
+                this.renderInventory && this.renderInventory();
+                this.saveGameState();
+                this.showNotification('🕳️ THE VOID LEVIATHAN EMERGES FROM THE PORTAL! All fleets battle stations!');
+            }
             
             
             renderResearch() {
@@ -16116,8 +16767,7 @@ const SHIP_IMAGE_DATA = {
                 } else if (tab === 'rankings') {
                     this.renderRankings();
                 } else if (tab === 'crafting') {
-                    // Crafting tab - just shows "Coming Soon" message
-                    // No update needed
+                    this.renderInlineCrafting();
                 }
                 
                 this.updateResearchStats();
@@ -16314,6 +16964,194 @@ const SHIP_IMAGE_DATA = {
                 `).join('');
             }
             
+            renderInlineCrafting(category) {
+                if (!window.craftingManager) return;
+                if (category !== undefined) this._inlineCraftCat = category;
+                if (!this._inlineCraftCat) this._inlineCraftCat = 'all';
+                const currentCategory = this._inlineCraftCat;
+
+                const getMatCount = (artifactId) =>
+                    (this.inventory || []).filter(i => i.artifactId === artifactId).length;
+
+                const canCraft = (recipe) => {
+                    if (!this.resources) return false;
+                    return this.resources.credits >= (recipe.creditCost || 0)
+                        && this.resources.metal   >= (recipe.metalCost  || 0)
+                        && this.resources.he3     >= (recipe.he3Cost    || 0)
+                        && recipe.ingredients.every(ing => getMatCount(ing.artifactId) >= ing.qty);
+                };
+
+                const artifactsRef = (typeof ARTIFACTS !== 'undefined') ? ARTIFACTS : {};
+                let craftedRecipes = {};
+                let craftingQueue  = [];
+                try {
+                    const saved = localStorage.getItem('fu_crafting_v1');
+                    if (saved) {
+                        const d = JSON.parse(saved);
+                        craftedRecipes = d.craftedRecipes || {};
+                        craftingQueue  = d.craftingQueue  || [];
+                    }
+                } catch(e) {}
+
+                const matCount = document.getElementById('researchCraftingMatCount');
+                if (matCount) {
+                    const mats = (this.inventory || []).filter(i => artifactsRef[i.artifactId]?.type === 'crafting').length;
+                    matCount.textContent = `🧪 ${mats} material${mats !== 1 ? 's' : ''}`;
+                }
+
+                // Active bonuses
+                const bonusStrip = document.getElementById('researchActiveBonuses');
+                if (bonusStrip) {
+                    const now = Date.now();
+                    const active = (this.temporaryBonuses || []).filter(b => b.expiresAt > now);
+                    bonusStrip.innerHTML = active.length ? active.map(b => {
+                        const rem = b.expiresAt - now;
+                        const hrs = Math.floor(rem / 3600000);
+                        const mins = Math.floor((rem % 3600000) / 60000);
+                        return `<div style="background:rgba(0,217,255,0.08);border:1px solid rgba(0,217,255,0.25);border-radius:5px;padding:5px 8px;font-size:10px;display:flex;justify-content:space-between;margin-bottom:3px;">
+                            <span style="color:#00d9ff;font-weight:700;">${b.craftName}</span>
+                            <span style="color:#8ba3c7;">${b.display}</span>
+                            <span style="color:#00ff88;">⏱ ${hrs}h ${mins}m</span>
+                        </div>`;
+                    }).join('') : '';
+                }
+
+                const CATS = {
+                    all:      { label: 'All',       color: '#ffd700' },
+                    fleet:    { label: 'Fleet',     color: '#ff3366' },
+                    planet:   { label: 'Planet',    color: '#00ff88' },
+                    legendary:{ label: 'Legendary', color: '#ffd700' },
+                    ship:     { label: 'Ships',     color: '#00d9ff' },
+                    voidboss: { label: 'Void Boss', color: '#a855f7' },
+                };
+
+                const catsEl = document.getElementById('researchCraftingCats');
+                if (catsEl) {
+                    catsEl.innerHTML = Object.entries(CATS).map(([id, c]) => `
+                        <button onclick="window.game.renderInlineCrafting('${id}')"
+                            style="padding:4px 8px;font-size:10px;font-weight:700;border-radius:4px;cursor:pointer;
+                            background:${currentCategory === id ? c.color : 'transparent'};
+                            color:${currentCategory === id ? '#000' : c.color};
+                            border:1px solid ${c.color};">${c.label}
+                        </button>`).join('');
+                }
+
+                // Queue
+                const queuePanel = document.getElementById('researchCraftingQueue');
+                const queueList  = document.getElementById('researchCraftingQueueList');
+                if (queuePanel && queueList) {
+                    if (craftingQueue.length > 0) {
+                        queuePanel.style.display = 'block';
+                        const now = Date.now();
+                        const recipes_all = (typeof CRAFTING_RECIPES !== 'undefined') ? CRAFTING_RECIPES : {};
+                        queueList.innerHTML = craftingQueue.map(q => {
+                            const r = recipes_all[q.recipeId];
+                            if (!r) return '';
+                            const pct = Math.min(100, ((now - q.startTime) / q.duration) * 100);
+                            const remSec = Math.max(0, Math.ceil((q.duration - (now - q.startTime)) / 1000));
+                            return `<div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:rgba(255,149,0,0.08);border:1px solid rgba(255,149,0,0.2);border-radius:5px;margin-bottom:4px;">
+                                <span>${r.icon}</span>
+                                <span style="font-size:11px;color:#e8f0ff;flex:1;">${r.name}</span>
+                                <div style="width:60px;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">
+                                    <div style="width:${pct}%;height:100%;background:#ff9500;"></div>
+                                </div>
+                                <span style="font-size:10px;color:#ff9500;">${remSec}s</span>
+                            </div>`;
+                        }).join('');
+                    } else {
+                        queuePanel.style.display = 'none';
+                    }
+                }
+
+                const allRecipes = (typeof CRAFTING_RECIPES !== 'undefined') ? Object.values(CRAFTING_RECIPES) : [];
+                const recipes = currentCategory === 'all' ? allRecipes : allRecipes.filter(r => r.category === currentCategory);
+
+                const grid = document.getElementById('researchCraftingGrid');
+                if (!grid) return;
+                if (recipes.length === 0) {
+                    grid.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-secondary);">No recipes in this category.</div>';
+                    return;
+                }
+
+                grid.innerHTML = recipes.map(recipe => {
+                    const alreadyCrafted = !recipe.repeatable && craftedRecipes[recipe.id];
+                    const inQueue = craftingQueue.find(q => q.recipeId === recipe.id);
+                    const craftable = canCraft(recipe);
+                    const catColor = (CATS[recipe.category] || CATS.all).color;
+                    const catLabel = (CATS[recipe.category] || CATS.all).label;
+
+                    const ingRows = recipe.ingredients.map(ing => {
+                        const have = getMatCount(ing.artifactId);
+                        const ok   = have >= ing.qty;
+                        const art  = artifactsRef[ing.artifactId];
+                        return `<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+                            <span style="color:var(--text-secondary);">${art?.icon||'🔹'} ${art?.name||ing.artifactId}</span>
+                            <span style="font-weight:700;color:${ok?'#00ff88':'#ff3366'}">${have}/${ing.qty}</span>
+                        </div>`;
+                    }).join('');
+
+                    let resultHTML = '';
+                    if (recipe.result?.type === 'techBonus') {
+                        resultHTML = `<div style="font-size:11px;color:#00d9ff;">✨ ${recipe.result.display}</div>`;
+                    } else if (recipe.result?.type === 'multiBonus') {
+                        resultHTML = recipe.result.bonuses.map(b =>
+                            `<div style="font-size:11px;color:#00d9ff;">✨ ${b.display}</div>`).join('');
+                    } else if (recipe.result?.type === 'unlockShip') {
+                        resultHTML = `<div style="font-size:11px;color:#00d9ff;">🚀 Unlocks: ${recipe.result.shipType}</div>`;
+                    } else if (recipe.result?.type === 'grantItem') {
+                        const ri = artifactsRef[recipe.result.artifactId];
+                        resultHTML = `<div style="font-size:11px;color:#a855f7;">${ri?.icon||'📦'} Grants: ${ri?.name||recipe.result.artifactId}</div>`;
+                    }
+
+                    let btn = '';
+                    if (alreadyCrafted) {
+                        btn = `<button disabled style="width:100%;padding:7px;margin-top:8px;background:rgba(0,255,136,0.08);border:1px solid #00ff88;border-radius:5px;color:#00ff88;font-size:11px;font-weight:700;">✓ Already Crafted</button>`;
+                    } else if (inQueue) {
+                        const pct = Math.min(100, ((Date.now()-inQueue.startTime)/inQueue.duration)*100).toFixed(0);
+                        btn = `<button disabled style="width:100%;padding:7px;margin-top:8px;background:rgba(255,149,0,0.08);border:1px solid #ff9500;border-radius:5px;color:#ff9500;font-size:11px;font-weight:700;">⚙️ Crafting... ${pct}%</button>`;
+                    } else if (craftable) {
+                        btn = `<button onclick="if(window.craftingManager){window.craftingManager.craft('${recipe.id}');setTimeout(()=>window.game.renderInlineCrafting(),700);}"
+                            style="width:100%;padding:7px;margin-top:8px;background:${catColor}22;border:1px solid ${catColor};border-radius:5px;color:${catColor};font-size:11px;font-weight:700;cursor:pointer;">
+                            ⚗️ Craft Now</button>`;
+                    } else {
+                        btn = `<button disabled style="width:100%;padding:7px;margin-top:8px;background:transparent;border:1px solid #333;border-radius:5px;color:#555;font-size:11px;font-weight:700;">🔒 Need Materials</button>`;
+                    }
+
+                    const repeatTag = recipe.repeatable
+                        ? ` <span style="font-size:9px;background:rgba(0,217,255,0.1);color:#00d9ff;padding:1px 4px;border-radius:3px;">REPEATABLE</span>` : '';
+
+                    return `<div style="background:var(--bg-secondary);border:1px solid ${catColor}44;border-radius:8px;padding:12px;${alreadyCrafted?'opacity:0.55;':''}">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                            <span style="font-size:22px;">${recipe.icon}</span>
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-size:12px;font-weight:700;color:var(--text-primary);">${recipe.name}${repeatTag}</div>
+                                <div style="font-size:9px;color:${catColor};text-transform:uppercase;letter-spacing:0.5px;">${catLabel}</div>
+                            </div>
+                            ${alreadyCrafted ? '<span style="font-size:9px;background:rgba(0,255,136,0.1);color:#00ff88;padding:2px 5px;border-radius:3px;flex-shrink:0;">✓ DONE</span>' : ''}
+                        </div>
+                        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;line-height:1.4;">${recipe.description}</div>
+                        <div style="border-top:1px solid var(--border-color);padding-top:7px;margin-bottom:6px;">
+                            <div style="font-size:10px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Required Materials</div>
+                            ${ingRows}
+                            ${recipe.creditCost > 0 ? `<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+                                <span style="color:var(--text-secondary);">💰 Credits</span>
+                                <span style="font-weight:700;color:${(this.resources?.credits||0)>=(recipe.creditCost||0)?'#00ff88':'#ff3366'}">₡${recipe.creditCost.toLocaleString()}</span>
+                            </div>` : ''}
+                            ${recipe.metalCost ? `<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
+                                <span style="color:var(--text-secondary);">⛏️ Metal</span>
+                                <span style="font-weight:700;color:${(this.resources?.metal||0)>=recipe.metalCost?'#00ff88':'#ff3366'}">${recipe.metalCost.toLocaleString()}</span>
+                            </div>` : ''}
+                        </div>
+                        <div style="border-top:1px solid var(--border-color);padding-top:5px;margin-bottom:5px;">
+                            <div style="font-size:10px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;">Result</div>
+                            ${resultHTML}
+                        </div>
+                        <div style="font-size:10px;color:var(--text-secondary);">⏱ ${recipe.craftTime}s craft time</div>
+                        ${btn}
+                    </div>`;
+                }).join('');
+            }
+
             updateResearchStats() {
                 const totalResearched = Object.values(this.ships).filter(s => s.researched).length;
                 const totalInProgress = this.researchQueue.length;
@@ -16654,6 +17492,36 @@ const SHIP_IMAGE_DATA = {
                             </button>
                         </div>
                         <div style="margin-top:6px;font-size:10px;color:#8ba3c7;text-align:center;">Market Value: ₡${artifactDef.marketValue?.toLocaleString() || '18,000'}</div>`;
+                    } else if (artifactDef.id === 'voidPortal') {
+                        // Void Portal — use opens Void Boss, or sell on market
+                        actionsHTML = `
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px;">
+                            <button onclick="window.game.useVoidPortal('${item.id}')" style="padding: 8px; background: linear-gradient(135deg, rgba(168,85,247,0.4), rgba(100,0,200,0.3)); border: 1px solid #a855f7; border-radius: 6px; color: #d8b4fe; font-weight: 700; cursor: pointer; font-size: 11px;">
+                                🌀 Open Portal
+                            </button>
+                            <button onclick="window.game.openArtifactMarket('${item.id}')" style="padding: 8px; background: linear-gradient(135deg, #fbbf24, #f59e0b); border: none; border-radius: 6px; color: black; font-weight: 700; cursor: pointer; font-size: 11px;">
+                                💰 Sell on Market
+                            </button>
+                            <button onclick="window.game.destroyArtifact('${item.id}')" style="grid-column:1/-1; padding: 8px; background: rgba(107,114,128,0.2); border: 1px solid #4b5563; border-radius: 6px; color: #9ca3af; font-weight: 700; cursor: pointer; font-size: 11px;">
+                                🗑️ Destroy
+                            </button>
+                        </div>
+                        <div style="margin-top:6px;font-size:10px;color:#a855f7;text-align:center;">Suggested Value: ₡${artifactDef.marketValue?.toLocaleString()}</div>`;
+                    } else if (artifactDef.id === 'voidShard') {
+                        // Void Shard — go craft (5→ Void Portal) or sell on market
+                        actionsHTML = `
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px;">
+                            <button onclick="if(window.craftingManager){window.game.closeInventory();window.craftingManager.open();window.craftingManager.setCategory('voidboss');}" style="padding: 8px; background: linear-gradient(135deg, rgba(168,85,247,0.3), rgba(100,0,200,0.2)); border: 1px solid #a855f7; border-radius: 6px; color: #d8b4fe; font-weight: 700; cursor: pointer; font-size: 11px;">
+                                🌀 Craft Portal
+                            </button>
+                            <button onclick="window.game.openArtifactMarket('${item.id}')" style="padding: 8px; background: linear-gradient(135deg, #fbbf24, #f59e0b); border: none; border-radius: 6px; color: black; font-weight: 700; cursor: pointer; font-size: 11px;">
+                                💰 Sell on Market
+                            </button>
+                            <button onclick="window.game.destroyArtifact('${item.id}')" style="grid-column:1/-1; padding: 8px; background: rgba(107,114,128,0.2); border: 1px solid #4b5563; border-radius: 6px; color: #9ca3af; font-weight: 700; cursor: pointer; font-size: 11px;">
+                                🗑️ Destroy
+                            </button>
+                        </div>
+                        <div style="margin-top:6px;font-size:10px;color:#8ba3c7;text-align:center;">Suggested Value: ₡${artifactDef.marketValue?.toLocaleString()}</div>`;
                     } else if (artifactDef.type === 'crafting') {
                         actionsHTML = `
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px;">
@@ -16947,11 +17815,11 @@ const SHIP_IMAGE_DATA = {
                     this.showNotification('⚠️ Invalid price');
                     return;
                 }
-                
-                // Remove from inventory
+
+                // Remove from inventory — item is now "escrowed" in the listing
                 this.inventory = this.inventory.filter(i => i.id != itemId);
-                
-                // Remove bonuses if permanent
+
+                // Remove permanent bonuses if applicable
                 if (artifactDef.type === 'permanent' && artifactDef.bonuses) {
                     if (artifactDef.bonuses.food) {
                         this.artifactBonuses.food = Math.max(0, (this.artifactBonuses.food || 0) - artifactDef.bonuses.food);
@@ -16960,13 +17828,19 @@ const SHIP_IMAGE_DATA = {
                         this.artifactBonuses.populationGrowth = Math.max(0, (this.artifactBonuses.populationGrowth || 0) - artifactDef.bonuses.populationGrowth);
                     }
                 }
-                
-                // Add credits
-                this.resources.credits += price;
-                
-                this.showNotification(`💰 Sold ${artifactDef.name} for ₡${price.toLocaleString()}`);
+
+                // Create market listing (artifact stays on market until bought or cancelled)
+                marketManager.createArtifactListing(
+                    this.playerData.username,
+                    artifactDef.id,
+                    artifactDef.name,
+                    artifactDef.icon,
+                    price,
+                    itemId
+                );
+
+                this.showNotification(`📦 ${artifactDef.icon} ${artifactDef.name} listed on market for ₡${price.toLocaleString()}. You'll receive credits when a buyer purchases it.`);
                 this.renderInventory();
-                this.updateDisplay();
                 this.saveGameState();
             }
             
@@ -21984,6 +22858,19 @@ window.addEventListener('DOMContentLoaded', () => {
                     window.game.unlockShip(r.shipType);
                 }
                 window.game.showNotification(`🚀 SHIP UNLOCKED: ${recipe.name}! Now available in Build Ships tab!`);
+            } else if (r.type === 'grantItem') {
+                // Grant an artifact item directly into inventory
+                if (window.game && r.artifactId && ARTIFACTS[r.artifactId]) {
+                    window.game.inventory.push({
+                        id: Date.now().toString() + Math.random().toString(36).slice(2),
+                        artifactId: r.artifactId,
+                        foundAt: Date.now(),
+                        source: 'crafting'
+                    });
+                    window.game.renderInventory && window.game.renderInventory();
+                    window.game.saveGameState && window.game.saveGameState();
+                    window.game.showNotification(`🌀 Crafted: ${ARTIFACTS[r.artifactId].icon} ${ARTIFACTS[r.artifactId].name}! Check your inventory.`);
+                }
             }
             // Mark as crafted if non-repeatable
             if (!recipe.repeatable) {
