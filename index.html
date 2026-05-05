@@ -13857,7 +13857,11 @@ const SHIP_IMAGE_DATA = {
                         }
                         
                         // +25% crafting material drop rate bonus (v2.5 update)
-                        const craftingBonus = 1.25;
+                        // +50% global drop rate increase (v3.0 update) → 1.25 × 1.5 = 1.875
+                        const craftingBonus = 1.875;
+
+                        // +50% global drop rate multiplier applied to all artifact rolls
+                        const globalDropBoost = 1.5;
                         
                         // Check for each artifact type with their specific probabilities
                         let foundArtifact = null;
@@ -13865,7 +13869,7 @@ const SHIP_IMAGE_DATA = {
                         
                         // Check crafting materials (5% and below)
                         // Ancient Artifact Fragment (0.067% - rarest crafting material)
-                        if (roll < ((1 / ARTIFACTS.ancientAudioDisc.rarity) * artifactBonus)) {
+                        if (roll < ((1 / ARTIFACTS.ancientAudioDisc.rarity) * artifactBonus * globalDropBoost)) {
                             foundArtifact = ARTIFACTS.ancientAudioDisc;
                         } else if (roll < ((1 / ARTIFACTS.fragment.rarity) * artifactBonus * craftingBonus)) {
                             foundArtifact = ARTIFACTS.fragment;
@@ -13898,14 +13902,14 @@ const SHIP_IMAGE_DATA = {
                             foundArtifact = ARTIFACTS.gold;
                         } else if (roll < ((1 / ARTIFACTS.mercury.rarity) * artifactBonus * craftingBonus)) {
                             foundArtifact = ARTIFACTS.mercury;
-                        // Then check ancient artifacts (with planet bonus applied)
-                        } else if (roll < ((1 / ARTIFACTS.flora.rarity) * artifactBonus)) {
+                        // Then check ancient artifacts (with planet bonus + global boost applied)
+                        } else if (roll < ((1 / ARTIFACTS.flora.rarity) * artifactBonus * globalDropBoost)) {
                             foundArtifact = ARTIFACTS.flora;
-                        } else if (roll < ((1 / ARTIFACTS.lab.rarity) * artifactBonus)) {
+                        } else if (roll < ((1 / ARTIFACTS.lab.rarity) * artifactBonus * globalDropBoost)) {
                             foundArtifact = ARTIFACTS.lab;
-                        } else if (roll < ((1 / ARTIFACTS.equations.rarity) * artifactBonus)) {
+                        } else if (roll < ((1 / ARTIFACTS.equations.rarity) * artifactBonus * globalDropBoost)) {
                             foundArtifact = ARTIFACTS.equations;
-                        } else if (roll < ((1 / ARTIFACTS.virus.rarity) * artifactBonus)) {
+                        } else if (roll < ((1 / ARTIFACTS.virus.rarity) * artifactBonus * globalDropBoost)) {
                             foundArtifact = ARTIFACTS.virus;
                         }
                         
