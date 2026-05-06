@@ -11833,6 +11833,7 @@ const SHIP_IMAGE_DATA = {
                 effect: 'crafting',
                 tradeable: true,
                 marketValue: 250000,
+                image: 'assets/voidshard.jpg',
             },
             heraldSeal: {
                 id: 'heraldSeal',
@@ -11856,6 +11857,7 @@ const SHIP_IMAGE_DATA = {
                 effect: 'openVoidBoss',
                 tradeable: true,
                 marketValue: 1500000,
+                image: 'assets/voidportal.jpg',
             },
         };
 
@@ -14054,7 +14056,8 @@ const SHIP_IMAGE_DATA = {
                 modal.innerHTML = `
                     <div style="max-width: 800px; width: 100%; background: var(--bg-secondary); border: 3px solid var(--accent-primary); border-radius: 16px; overflow: hidden; box-shadow: 0 0 60px var(--accent-primary);">
                         <div style="position: relative;">
-                            <img src="${artifact.image}" alt="${artifact.name}" style="width: 100%; height: 400px; object-fit: cover; display: block;">
+                            <img src="${artifact.image || ''}" alt="${artifact.name}" style="width: 100%; height: 400px; object-fit: cover; display: ${artifact.image ? 'block' : 'none'};" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                            <div style="display:${artifact.image ? 'none' : 'flex'};width:100%;height:200px;align-items:center;justify-content:center;font-size:80px;background:linear-gradient(135deg,rgba(0,217,255,0.1),rgba(168,85,247,0.1));">${artifact.icon}</div>
                             <div style="position: absolute; top: 16px; right: 16px;">
                                 <button onclick="this.closest('div[style*=fixed]').remove()" style="background: rgba(0,0,0,0.8); border: 2px solid var(--accent-danger); color: var(--accent-danger); font-size: 24px; width: 50px; height: 50px; border-radius: 50%; cursor: pointer; font-weight: 900; transition: all 0.3s;">
                                     ✕
@@ -15160,9 +15163,13 @@ const SHIP_IMAGE_DATA = {
                 modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:10006;display:flex;align-items:center;justify-content:center;';
                 modal.innerHTML = `
                     <div style="max-width:480px;width:90%;background:var(--bg-secondary);border:2px solid #ff3366;border-radius:16px;overflow:hidden;">
-                        <div style="background:linear-gradient(135deg,rgba(255,51,102,0.2),rgba(255,100,0,0.1));padding:20px 24px;border-bottom:1px solid rgba(255,51,102,0.4);">
-                            <div style="font-family:'Orbitron',sans-serif;font-size:20px;color:#ff3366;letter-spacing:2px;">🌀 SUMMON RIFT BOSS</div>
-                            <div style="font-size:12px;color:#8ba3c7;margin-top:4px;">Guild event — all members may participate</div>
+                        <div style="position:relative;">
+                            <img src="assets/voidplanet.jpg" alt="Void Encounter" style="width:100%;height:180px;object-fit:cover;object-position:center;display:block;opacity:0.85;">
+                            <div style="position:absolute;inset:0;background:linear-gradient(transparent 30%,rgba(8,5,18,0.95));"></div>
+                            <div style="position:absolute;bottom:0;left:0;right:0;padding:16px 20px;">
+                                <div style="font-family:'Orbitron',sans-serif;font-size:20px;color:#ff3366;letter-spacing:2px;">🌀 SUMMON RIFT BOSS</div>
+                                <div style="font-size:12px;color:#8ba3c7;margin-top:4px;">Guild event — all members may participate</div>
+                            </div>
                         </div>
                         <div style="padding:24px;">
                             <div style="background:rgba(255,51,102,0.08);border:1px solid rgba(255,51,102,0.3);border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:1.6;color:#e8f0ff;">
@@ -15399,10 +15406,13 @@ const SHIP_IMAGE_DATA = {
                 ).join('');
                 modal.innerHTML = `
                     <div style="max-width:520px;width:90%;background:var(--bg-secondary);border:2px solid #ffd700;border-radius:16px;overflow:hidden;">
-                        <div style="background:linear-gradient(135deg,rgba(255,215,0,0.15),rgba(255,100,0,0.08));padding:24px;text-align:center;">
-                            <div style="font-size:48px;margin-bottom:8px;">🏆</div>
-                            <div style="font-family:'Orbitron',sans-serif;font-size:22px;color:#ffd700;letter-spacing:2px;">HERALD DEFEATED</div>
-                            <div style="font-size:12px;color:#8ba3c7;margin-top:6px;">The Fracture Herald has been banished from this sector</div>
+                        <div style="position:relative;">
+                            <img src="assets/voidplanet.jpg" alt="Void Encounter" style="width:100%;height:160px;object-fit:cover;object-position:center;display:block;opacity:0.7;">
+                            <div style="position:absolute;inset:0;background:linear-gradient(transparent 20%,rgba(0,0,0,0.88));display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:16px;">
+                                <div style="font-size:40px;margin-bottom:4px;">🏆</div>
+                                <div style="font-family:'Orbitron',sans-serif;font-size:20px;color:#ffd700;letter-spacing:2px;">HERALD DEFEATED</div>
+                                <div style="font-size:11px;color:#8ba3c7;margin-top:4px;">The Fracture Herald has been banished from this sector</div>
+                            </div>
                         </div>
                         <div style="padding:24px;">
                             <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#8ba3c7;margin-bottom:10px;">Your Rewards (3 items + 1 Void Shard)</div>
@@ -15434,18 +15444,23 @@ const SHIP_IMAGE_DATA = {
                     box-shadow:0 0 40px rgba(255,51,102,0.25);
                 `;
                 hud.innerHTML = `
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                        <span style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:2px;color:#ff3366;">🌀 THE FRACTURE HERALD</span>
-                        <span id="bossPhaseLabel" style="font-size:12px;font-weight:700;color:#ff8800;">Phase 1</span>
-                        <button onclick="document.getElementById('worldBossHUD').style.display='none'"
-                            style="background:transparent;border:1px solid #333;border-radius:4px;color:#8ba3c7;padding:2px 8px;cursor:pointer;font-size:11px;">Minimise</button>
-                    </div>
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+                        <img src="assets/voidplanet.jpg" alt="Void" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid rgba(255,51,102,0.5);flex-shrink:0;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+                                <span style="font-family:'Orbitron',sans-serif;font-size:12px;letter-spacing:2px;color:#ff3366;">🌀 THE FRACTURE HERALD</span>
+                                <span id="bossPhaseLabel" style="font-size:12px;font-weight:700;color:#ff8800;">Phase 1</span>
+                            </div>
                     <div style="height:12px;background:rgba(255,255,255,0.07);border-radius:6px;overflow:hidden;margin-bottom:6px;">
                         <div id="bossHpFill" style="height:100%;border-radius:6px;background:linear-gradient(90deg,#ff3366,#ff8800);transition:width 0.4s ease;box-shadow:0 0 10px rgba(255,51,102,0.4);width:100%;"></div>
                     </div>
-                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#8ba3c7;margin-bottom:12px;">
+                    <div style="display:flex;justify-content:space-between;font-size:11px;color:#8ba3c7;margin-bottom:4px;">
                         <span id="bossHpText">${this.worldBoss.maxHp.toLocaleString()} / ${this.worldBoss.maxHp.toLocaleString()} HP</span>
                         <span id="bossDmgText">Your damage: 0</span>
+                    </div>
+                        </div>
+                        <button onclick="document.getElementById('worldBossHUD').style.display='none'"
+                            style="background:transparent;border:1px solid #333;border-radius:4px;color:#8ba3c7;padding:4px 8px;cursor:pointer;font-size:11px;flex-shrink:0;align-self:flex-start;">▲</button>
                     </div>
                     <div style="font-size:11px;color:#ff8800;margin-bottom:10px;" id="bossPhaseWarning"></div>
                     <div style="display:flex;flex-wrap:wrap;gap:8px;" id="bossFleetButtons"></div>
@@ -17564,7 +17579,10 @@ const SHIP_IMAGE_DATA = {
                     return `
                         <div class="tech-node researched">
                             <div class="tech-status-badge researched">✓ OWNED</div>
-                            <div class="tech-icon">${artifactDef.icon}</div>
+                            ${artifactDef.image
+                                ? `<div class="tech-icon" style="padding:0;overflow:hidden;border-radius:8px;"><img src="${artifactDef.image}" alt="${artifactDef.name}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.innerHTML='${artifactDef.icon}'"></div>`
+                                : `<div class="tech-icon">${artifactDef.icon}</div>`
+                            }
                             <div class="tech-name">${artifactDef.name}</div>
                             <div class="tech-description">${artifactDef.description}</div>
                             <div class="tech-effects">
