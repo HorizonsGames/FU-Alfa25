@@ -159,6 +159,74 @@
             0%, 100% { box-shadow: 0 0 0 rgba(139,0,0,0.4); }
             50% { box-shadow: 0 0 10px rgba(139,0,0,0.6); }
         }
+
+        /* ── Race Selection Cards ─────────────────────────────────── */
+        #raceOptions {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 14px;
+            margin-top: 10px;
+        }
+
+        .race-option {
+            cursor: pointer;
+            border-radius: 10px;
+            border: 2px solid rgba(255,255,255,0.08);
+            overflow: hidden;
+            transition: all 0.28s ease;
+            background: var(--bg-tertiary);
+        }
+
+        .race-option:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+        }
+
+        .race-option.selected {
+            border-color: var(--accent-primary) !important;
+            box-shadow: 0 0 24px rgba(0,217,255,0.35) !important;
+        }
+
+        .race-option img {
+            width: 100%;
+            height: 140px;
+            object-fit: cover;
+            object-position: center;
+            display: block;
+        }
+
+        .race-option-body {
+            padding: 12px 14px 10px;
+        }
+
+        .race-option-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .race-option-name {
+            font-weight: 800;
+            font-size: 13px;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 0.4px;
+        }
+
+        .race-diff-badge {
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .race-option-desc {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.45;
+        }
         .resource-value.metal { color: #a0a0a0; }
         .resource-value.he3 { color: #00ff88; }
         .resource-value.food { color: #ff9500; }
@@ -6124,7 +6192,7 @@
                 name: 'Reaper Collective', 
                 color: '#ff3366', 
                 description: 'Military powerhouse - Feared scavengers-turned-predators born from desperation',
-                difficulty: 'Medium',
+                difficulty: 'Easy',
                 modifiers: { mining: 25, population: 50, military: 75, credits: 42 },
                 story: `The Reapers aren't a species—they're survivors who became predators. Born 300 years ago when Outer Fringe colonies were abandoned during the First Contact Wars, desperate refugees seized military vessels and evolved into the galaxy's most feared pirates. They're multi-species crews united by the Reaper Code: "The Void Provides," "Crew Over Blood," and "Fear is Currency." Operating as competing fleet clans, they've perfected asymmetric warfare and created a shadow economy. Their motto: "Kesh vek marr—the void gives to those who take."`
             },
@@ -6132,7 +6200,7 @@
                 name: "Kor'ai Dynasty", 
                 color: '#ff9500', 
                 description: 'Mining specialists - Reptilian warriors who redirected clan wars into stellar expansion',
-                difficulty: 'Medium',
+                difficulty: 'Easy',
                 modifiers: { mining: 52, population: 25, military: 40, credits: 60 },
                 story: `The Kor'ai are bipedal reptilians from high-gravity Kora Prime. Their society is built on "Strength Through Contest"—every aspect of life involves ritualized competition. 500 years ago, they nearly destroyed themselves in century-long Clan Wars. The conflict ended with the Accord of Ascension: redirect competitive nature outward, into the stars. Now they venture as competing merchant-conqueror fleets, each clan seeking glory through trade and territorial negotiation. They respect strength and test boundaries constantly. Their philosophy: "Kelash Mor'kai"—"The strong stars shine brightest."`
             },
@@ -10954,14 +11022,29 @@ const SHIP_IMAGE_DATA = {
             }
             
             renderRaceOptions() {
+                const RACE_LOGOS = {
+                    'Terran Empire':     'Terran-logo.jpg',
+                    "Kor'ai Dynasty":    'korai-logo.jpg',
+                    'Reaper Collective': 'reapers-logo.jpg',
+                    'The Ascended':      'ascended-logo.jpg',
+                    'The Viral Race':    'viral-logo.jpg'
+                };
+                const DIFF_COLORS = { 'Easy': '#00ff88', 'Medium': '#ffaa00', 'Hard': '#ff4444' };
                 const container = document.getElementById('raceOptions');
-                container.innerHTML = RACES.map(race => `
-                    <div class="race-option" onclick="window.auth.selectRace('${race.name}')" data-race="${race.name}">
-                        <div class="race-icon" style="color: ${race.color}">⚔️</div>
-                        <div class="race-name">${race.name}</div>
-                        <div class="race-desc">${race.description}</div>
-                    </div>
-                `).join('');
+                container.innerHTML = RACES.map(race => {
+                    const logo = RACE_LOGOS[race.name] || '';
+                    const diffColor = DIFF_COLORS[race.difficulty] || '#8ba3c7';
+                    return `<div class="race-option" onclick="window.auth.selectRace('${race.name}')" data-race="${race.name}" style="--race-color:${race.color};">
+                        ${logo ? `<img src="${logo}" alt="${race.name}">` : `<div style="height:100px;background:${race.color}22;display:flex;align-items:center;justify-content:center;font-size:40px;">⚔️</div>`}
+                        <div class="race-option-body">
+                            <div class="race-option-header">
+                                <div class="race-option-name" style="color:${race.color};">${race.name}</div>
+                                <div class="race-diff-badge" style="background:${diffColor}22;color:${diffColor};border:1px solid ${diffColor};">${race.difficulty}</div>
+                            </div>
+                            <div class="race-option-desc">${race.description}</div>
+                        </div>
+                    </div>`;
+                }).join('');
             }
             
             selectRace(raceName) {
@@ -19533,17 +19616,35 @@ const SHIP_IMAGE_DATA = {
                 <div style="background: var(--bg-secondary); border: 2px solid var(--accent-primary); border-radius: 12px; padding: 30px; max-width: 800px; width: 100%;">
                     <h2 style="color: var(--accent-primary); font-family: 'Orbitron', sans-serif; font-size: 28px; margin-bottom: 20px; text-align: center;">🎭 SELECT NEW RACE</h2>
                     
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
-                        ${RACES.map(race => `
-                            <div class="race-option" onclick="selectNewRace('${race.name}')" 
-                                 style="background: var(--bg-tertiary); border: 2px solid var(--border-color); border-radius: 8px; padding: 16px; cursor: pointer; text-align: center; transition: all 0.3s;"
-                                 onmouseover="this.style.borderColor='var(--accent-primary)'; this.style.background='rgba(0,217,255,0.1)'"
-                                 onmouseout="this.style.borderColor='var(--border-color)'; this.style.background='var(--bg-tertiary)'">
-                                <div style="font-size: 32px; margin-bottom: 8px;">${race.icon}</div>
-                                <div style="font-weight: 700; color: var(--accent-primary); margin-bottom: 4px;">${race.name}</div>
-                                <div style="font-size: 11px; color: var(--text-secondary);">${race.trait}</div>
-                            </div>
-                        `).join('')}
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                        ${(function() {
+                            const RACE_LOGOS = {
+                                'Terran Empire':     'Terran-logo.jpg',
+                                "Kor'ai Dynasty":    'korai-logo.jpg',
+                                'Reaper Collective': 'reapers-logo.jpg',
+                                'The Ascended':      'ascended-logo.jpg',
+                                'The Viral Race':    'viral-logo.jpg'
+                            };
+                            const DIFF_COLORS = { 'Easy': '#00ff88', 'Medium': '#ffaa00', 'Hard': '#ff4444' };
+                            return RACES.map(race => {
+                                const logo = RACE_LOGOS[race.name];
+                                const diffColor = DIFF_COLORS[race.difficulty] || '#8ba3c7';
+                                return \`
+                                <div onclick="selectNewRace('\${race.name}')"
+                                     style="cursor:pointer;border-radius:10px;border:2px solid rgba(255,255,255,0.08);overflow:hidden;transition:all 0.3s;background:var(--bg-tertiary);"
+                                     onmouseover="this.style.borderColor='\${race.color}';this.style.boxShadow='0 0 20px \${race.color}44';"
+                                     onmouseout="this.style.borderColor='rgba(255,255,255,0.08)';this.style.boxShadow='none';">
+                                    \${logo ? \`<img src="\${logo}" alt="\${race.name}" style="width:100%;height:140px;object-fit:cover;object-position:center;display:block;">\` : ''}
+                                    <div style="padding:12px 14px 10px;">
+                                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                                            <div style="font-weight:800;font-size:13px;color:\${race.color};font-family:'Orbitron',sans-serif;">\${race.name}</div>
+                                            <div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:\${diffColor}22;color:\${diffColor};border:1px solid \${diffColor};text-transform:uppercase;">\${race.difficulty}</div>
+                                        </div>
+                                        <div style="font-size:11px;color:var(--text-secondary);line-height:1.4;">\${race.description}</div>
+                                    </div>
+                                </div>\`;
+                            }).join('');
+                        })()}
                     </div>
                     
                     <button onclick="document.getElementById('raceChangeModal').remove()" class="btn" style="width: 100%; background: var(--bg-tertiary);">
