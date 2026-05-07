@@ -132,6 +132,33 @@
         }
         
         .resource-value.credits { color: #ffd700; }
+
+        /* Viral Race damage type colors */
+        .dmg-biological { color: #8b0000; }
+        .dmg-spore { color: #5a1a00; }
+        .dmg-necrotic { color: #6b0b3a; }
+        .dmg-organic { color: #4a1a0a; }
+
+        /* Viral Race infect badge on ship cards */
+        .infect-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: rgba(139,0,0,0.25);
+            border: 1px solid #8b0000;
+            border-radius: 4px;
+            color: #ff4444;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-left: 6px;
+            animation: infectPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes infectPulse {
+            0%, 100% { box-shadow: 0 0 0 rgba(139,0,0,0.4); }
+            50% { box-shadow: 0 0 10px rgba(139,0,0,0.6); }
+        }
         .resource-value.metal { color: #a0a0a0; }
         .resource-value.he3 { color: #00ff88; }
         .resource-value.food { color: #ff9500; }
@@ -4916,6 +4943,7 @@
             <div class="fleet-tabs" style="margin-bottom: 12px;">
                 <button class="fleet-tab active" id="fleetTabBuildShips" onclick="window.game.switchBuildTab('build')">Build Ships</button>
                 <button class="fleet-tab" id="fleetTabMyFleet" onclick="window.game.switchBuildTab('fleet')">My Fleet</button>
+                <button class="fleet-tab" id="fleetTabInfect" onclick="window.game.openInfectPanel()" style="display:none;color:#ff4444;border-color:#8b0000;">🦠 Hive Capture</button>
                 <button class="fleet-tab" onclick="window.game.switchBuildTab('maintenance')">Maintenance</button>
             </div>
             
@@ -6115,6 +6143,14 @@
                 difficulty: 'Medium',
                 modifiers: { mining: 35, population: 40, military: 60, credits: 78 },
                 story: `The Ascended are an ancient civilization that achieved technological transcendence. Through millennia of advancement, they evolved beyond pure physical existence, merging consciousness with energy and technology. Their ships are marvels of crystalline architecture and energy manipulation, powered by forces other species barely understand. While appearing benevolent, their true motivations remain mysterious. They view younger races with a mixture of curiosity and paternalism, occasionally intervening in galactic affairs for reasons only they comprehend. Their presence is both inspiring and unsettling.`
+            },
+            {
+                name: 'The Viral Race',
+                color: '#8b0000',
+                description: 'Biological annihilators - A galaxy-spanning plague reawakened by the screams of the dying',
+                difficulty: 'Hard',
+                modifiers: { mining: 15, population: 90, military: 95, credits: 10 },
+                story: `They are not a civilization. They are a catastrophe that remembers itself. Before the Tarren Coalition, before the Kor\'ai trade routes, before the Reapers seized their first warship, the galaxy trembled before the Viral Race—a distributed biological holocaust that consumed the Guardian Peoples and left nothing but irradiated ruins and obsidian warnings. The Guardians did not defeat them. They only built a prison. And now the prison doors are opening. Reawakened by millennia of galactic warfare—the radiation, the psionic echoes of mass death, the screaming resonance of a galaxy at war with itself—the dormant spores and hive structures buried across forgotten systems have begun to pulse once more. Their ships are not built. They grow. Hulls of fused steel and swollen flesh. Corridors that breathe. Walls threaded with nervous-system tendrils. Their consumed worlds do not fall—they transform, oceans thickening to black-red sludge, forests becoming fields of pulsating organic growth, cities dissolving beneath mountains of spreading tissue. No cure has ever been discovered. No negotiation has ever been attempted. There is only the Hunger.`
             }
         ];
         
@@ -6179,6 +6215,46 @@
                 { name: 'Rebirth Battleship', class: 'Battleship', icon: '⚔️', damage: 135, damageType: 'Nuclear', hitPoints: 130, hull: 110, shield: 55, metalCost: 950, creditCost: 50000, time: 12000, description: 'Purifies entire star systems with planetary-scale weapons' },
                 { name: 'Prophet Battleship', class: 'Battleship', icon: '⚔️', damage: 180, damageType: 'Laser', hitPoints: 200, hull: 175, shield: 80, metalCost: 7800, creditCost: 70000, time: 13000, description: 'Herald of the Eternal Return with devastating firepower' },
                 { name: 'Holy Endeavour Capitol Ship', class: 'Capitol', icon: '👑', damage: 225, damageType: 'EM', hitPoints: 355, hull: 315, shield: 160, metalCost: 1350000, creditCost: 15500000, time: 172800, description: 'Flagship powered by Ancient singularity core' }
+            ],
+
+            // THE VIRAL RACE SHIPS (Biological, Spore, Necrotic, Psionic)
+            'The Viral Race': [
+                {
+                    name: 'The Rabies', class: 'Frigate', icon: '\u{1F9A0}',
+                    damage: 65, damageType: 'Biological',
+                    hitPoints: 105, hull: 105, shield: 0,
+                    metalCost: 120, creditCost: 800, time: 180,
+                    image: 'Rabies.png',
+                    infectAbility: true,
+                    description: 'A snarling bio-frigate whose barbed tendrils latch onto enemy hulls and inject Viral spores. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
+                },
+                {
+                    name: 'The Anthrax', class: 'Cruiser', icon: '\u2623\uFE0F',
+                    damage: 75, damageType: 'Biological',
+                    hitPoints: 165, hull: 165, shield: 0,
+                    metalCost: 400, creditCost: 2500, time: 480,
+                    image: 'Anthrax.png',
+                    infectAbility: true,
+                    description: 'A hulking bio-cruiser with reinforced bone-plating and necrotic injector cannons. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
+                },
+                {
+                    name: 'The Zika', class: 'Battleship', icon: '\u{1F9EC}',
+                    damage: 125, damageType: 'Spore/Organic',
+                    hitPoints: 205, hull: 205, shield: 0,
+                    metalCost: 8000, creditCost: 90000, time: 10800,
+                    image: 'Zika.png',
+                    infectAbility: true,
+                    description: 'A colossal bio-battleship that saturates entire fleet sectors with hybrid Spore/Organic payloads. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
+                },
+                {
+                    name: 'The COVID', class: 'Capitol', icon: '\u{1F441}\uFE0F',
+                    damage: 145, damageType: 'Necrotic',
+                    hitPoints: 225, hull: 225, shield: 0,
+                    metalCost: 1800000, creditCost: 16000000, time: 172800,
+                    image: 'covid.png',
+                    infectAbility: true,
+                    description: 'The apex Viral Capitol Ship. Radiates a Necrotic death-field that dissolves crew tissue and rewrites ship biology wholesale. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
+                }
             ]
         };
         
@@ -7069,6 +7145,99 @@
                         planet: { mining: 5, populationGrowth: 5 }
                     },
                     description: 'Sacred guardian of Oracle-VI whose balanced bonuses support both the fleet and the growth of Ascended colonies'
+                }
+            ],
+            'The Viral Race': [
+                {
+                    id: 'viral_cmd_001',
+                    name: 'The Flesh-Star Risen',
+                    rarity: 'LEGENDARY',
+                    race: 'The Viral Race',
+                    title: 'Core Entity / Prime Awakener',
+                    image: 'assets/viral_cmd_001.jpg',
+                    bonuses: {
+                        fleet: { damage: 30, shield: 0 },
+                        planet: { mining: 0, populationGrowth: 40 }
+                    },
+                    description: 'The first Core Entity to fully awaken from the Guardian prison. Its psionic resonance accelerates hive growth across entire sectors, and its presence doubles the lethality of every Viral fleet in range.'
+                },
+                {
+                    id: 'viral_cmd_002',
+                    name: 'The Echo Herald',
+                    rarity: 'LEGENDARY',
+                    race: 'The Viral Race',
+                    title: 'Psionic Amplifier / Wave-Echo Channeler',
+                    image: 'assets/viral_cmd_002.jpg',
+                    bonuses: {
+                        fleet: { damage: 20, shield: 0 },
+                        planet: { mining: 0, populationGrowth: 30 }
+                    },
+                    description: 'A semi-corporeal entity that feeds on the psionic resonance of dying civilizations. It converts enemy death-screams into raw fleet power, growing stronger with every world consumed.'
+                },
+                {
+                    id: 'viral_cmd_003',
+                    name: 'Host-Mind Kalleth',
+                    rarity: 'EPIC',
+                    race: 'The Viral Race',
+                    title: 'Converted Guardian Commander',
+                    image: 'assets/viral_cmd_003.jpg',
+                    bonuses: {
+                        fleet: { damage: 18, shield: 0 },
+                        planet: { mining: 10, populationGrowth: 20 }
+                    },
+                    description: 'Once a Guardian jailer tasked with maintaining the Viral prison, Kalleth was among the first consumed when the seals broke. His memories of Guardian containment technology now serve the Hive, letting it hunt dormant structures.'
+                },
+                {
+                    id: 'viral_cmd_004',
+                    name: 'The Blight Surgeon',
+                    rarity: 'EPIC',
+                    race: 'The Viral Race',
+                    title: 'Biomass Architect / Spore-Shaper',
+                    image: 'assets/viral_cmd_004.jpg',
+                    bonuses: {
+                        fleet: { damage: 12, shield: 0 },
+                        planet: { mining: 5, populationGrowth: 25 }
+                    },
+                    description: 'A distributed intelligence specializing in the rapid restructuring of consumed organisms into warship biomass. Under its direction, conquered planets are converted into breeding hives in half the normal time.'
+                },
+                {
+                    id: 'viral_cmd_005',
+                    name: 'Tendril-Prime Vrask',
+                    rarity: 'EPIC',
+                    race: 'The Viral Race',
+                    title: 'Swarm Admiral / Fleet Nerve-Root',
+                    image: 'assets/viral_cmd_005.jpg',
+                    bonuses: {
+                        fleet: { damage: 20, shield: 0 },
+                        planet: { mining: 0, populationGrowth: 15 }
+                    },
+                    description: 'Vrask is the central nervous tendril threading through an entire Viral assault swarm. It coordinates thousands of individual organisms into a single devastating strike formation, eliminating gaps in the hive\'s attack patterns.'
+                },
+                {
+                    id: 'viral_cmd_006',
+                    name: 'The Screaming Hollow',
+                    rarity: 'COMMON',
+                    race: 'The Viral Race',
+                    title: 'Psionic Disruptor',
+                    image: 'assets/viral_cmd_006.jpg',
+                    bonuses: {
+                        fleet: { damage: 10, shield: 0 },
+                        planet: { mining: 0, populationGrowth: 10 }
+                    },
+                    description: 'A partially consumed entity that broadcasts the death-echoes of its former civilization in a continuous psionic field, disorienting enemy crews and weakening enemy fleet coordination.'
+                },
+                {
+                    id: 'viral_cmd_007',
+                    name: 'Spore-Walker Dennek',
+                    rarity: 'COMMON',
+                    race: 'The Viral Race',
+                    title: 'Infection Vanguard',
+                    image: 'assets/viral_cmd_007.jpg',
+                    bonuses: {
+                        fleet: { damage: 8, shield: 0 },
+                        planet: { mining: 5, populationGrowth: 8 }
+                    },
+                    description: 'A vanguard organism specialized in seeding enemy systems with dormant Viral spores before the main hive arrives, ensuring no world can be evacuated in time.'
                 }
             ]
         };
@@ -10480,6 +10649,12 @@
                 'Transcendence Battleship': 'Transcendence.jpg',
                 'Rebirth Battleship': 'Rebirth.jpg',
                 'Holy Endeavour Capitol Ship': 'Holy_Endevour.jpg'
+            },
+            'The Viral Race': {
+                'The Rabies': 'Rabies.png',
+                'The Anthrax': 'Anthrax.png',
+                'The Zika': 'Zika.png',
+                'The COVID': 'covid.png'
             }
         };
         
@@ -11877,6 +12052,8 @@ const SHIP_IMAGE_DATA = {
                 this.planets = [];
                 this.ships = {};
                 this.unlockedShips = []; // Special ships unlocked through crafting
+                this.capturedShips = {};
+                this.reverseEngineered = {};
                 this.fleets = [];
                 this.fleetFormations = {}; // Formation types
                 this.fleetDeployments = {}; // Deployment tracking
@@ -11984,6 +12161,11 @@ const SHIP_IMAGE_DATA = {
                     this.selectedRace = RACES.find(r => r.name === playerData.race) || RACES[0];
                     document.getElementById('raceBadge').textContent = this.selectedRace.name;
                     document.getElementById('playerUsername').textContent = playerData.username;
+                    // Show Hive Capture tab only for Viral Race
+                    const infectTab = document.getElementById('fleetTabInfect');
+                    if (infectTab) infectTab.style.display = this.selectedRace.name === 'The Viral Race' ? 'inline-block' : 'none';
+                    // Load Viral infect/capture persistence
+                    if (this.selectedRace.name === 'The Viral Race') { this.loadInfectData(); }
                     
                     // Set account type badge and admin panel visibility
                     const accountType = playerData.accountType || 'Player';
@@ -13570,6 +13752,24 @@ const SHIP_IMAGE_DATA = {
                         this.renderShips();
                         this.updateMap();
                         this.showNotification(`✨ Victory! ${target.name} captured! (Lost 20% of fleet)`);
+
+                        // Viral Race: attempt infect on enemy defending ships
+                        if (this.isViralRace && this.isViralRace() && target.fleets) {
+                            const allRaceShips = Object.values(SHIP_CLASSES).flat();
+                            const viralShips = SHIP_CLASSES['The Viral Race'] || [];
+                            let infectCount = 0;
+                            viralShips.filter(s => s.infectAbility).forEach(s => { infectCount += (this.ships[s.name]?.count || 0); });
+                            target.fleets.forEach(fleet => {
+                                if (fleet && fleet.stacks) {
+                                    fleet.stacks.forEach(stack => {
+                                        if (stack.shipName && stack.count > 0) {
+                                            const tmpl = allRaceShips.find(s => s.name === stack.shipName);
+                                            setTimeout(() => this.attemptInfect(stack.shipName, tmpl || { name: stack.shipName }, infectCount), 500);
+                                        }
+                                    });
+                                }
+                            });
+                        }
                     } else {
                         // Defeat
                         // Lose 50% of attacking fleet
@@ -15763,6 +15963,17 @@ const SHIP_IMAGE_DATA = {
                 const specialShips = this.getSpecialShips();
                 const allShips = [...researchedShips, ...specialShips];
                 
+                // For Viral Race: add reverse-engineered ships as buildable
+                if (this.isViralRace && this.isViralRace()) {
+                    this.initInfectData();
+                    Object.keys(this.reverseEngineered).forEach(shipName => {
+                        if (!this.ships[shipName]) return;
+                        if (!researchedShips.find(s => s.name === shipName)) {
+                            const s = this.ships[shipName];
+                            if (s && s.reverseEngineered) researchedShips.push(s);
+                        }
+                    });
+                }
                 if (allShips.length === 0) {
                     container.innerHTML = `
                         <div style="text-align: center; padding: 40px; color: var(--text-secondary);">
@@ -15881,17 +16092,18 @@ const SHIP_IMAGE_DATA = {
                     const canAfford = this.resources.metal >= totalMetal && this.resources.credits >= totalCredits;
                     
                     return `
-                        <div class="ship-build-item">
+                        <div class="ship-build-item" style="${ship.infectAbility ? 'border-color:rgba(139,0,0,0.5);' : ''} ${ship.reverseEngineered ? 'border-color:rgba(0,139,50,0.5);' : ''}">
                             <div class="ship-build-header">
                                 <div class="ship-build-icon">${ship.icon}</div>
                                 <div class="ship-build-info">
-                                    <div class="ship-build-name">${ship.name}</div>
+                                    <div class="ship-build-name">${ship.name}${ship.infectAbility ? '<span class="infect-badge">🦠 INFECTS</span>' : ''}${ship.reverseEngineered ? '<span class="infect-badge" style="background:rgba(0,139,50,0.2);border-color:#22aa44;color:#22aa44;">🧬 RE-ENGINEERED</span>' : ''}</div>
                                     <div class="ship-build-stats">
                                         ⚔️ ${ship.damage} ${ship.damageType || ''} DMG • 🛡️ ${ship.hull || ship.hitPoints} Hull • 🔷 ${ship.shield || 0} Shield
                                     </div>
                                     <div class="ship-build-stats" style="margin-top: 4px;">
                                         In Fleet: <span style="color: var(--accent-secondary);">${ship.count}</span>
                                     </div>
+                                    ${ship.infectAbility ? `<div style="font-size:11px;color:#8b0000;margin-top:4px;font-style:italic;">${ship.description}</div>` : ''}
                                 </div>
                             </div>
                             
@@ -16016,7 +16228,208 @@ const SHIP_IMAGE_DATA = {
                     this.showNotification(`🏭 Building ${quantity}x ${ship.name}... (${buildTime}s)`);
                 }
             }
-            
+
+            // ========== VIRAL RACE: INFECT & CAPTURE SYSTEM ==========
+
+            isViralRace() {
+                return this.selectedRace && this.selectedRace.name === 'The Viral Race';
+            }
+
+            // Initialize infect storage on game load if missing
+            initInfectData() {
+                if (!this.capturedShips) this.capturedShips = {};
+                if (!this.reverseEngineered) this.reverseEngineered = {};
+            }
+
+            // Called when a Viral fleet wins a battle — attempt infect on defeated ships
+            attemptInfect(defeatedShipName, defeatedShipData, infectingShipCount) {
+                if (!this.isViralRace()) return;
+                this.initInfectData();
+
+                // Check player hasn't exceeded 8 captured/RE ship slot types
+                const totalSlots = Object.keys(this.capturedShips).length + Object.keys(this.reverseEngineered).length;
+                if (totalSlots >= 8 && !this.capturedShips[defeatedShipName] && !this.reverseEngineered[defeatedShipName]) {
+                    this.showNotification('⚠️ Maximum 8 captured ship slots reached. Purge or reverse-engineer existing captures first.');
+                    return;
+                }
+
+                // Already reverse-engineered this type — can build it, skip capture
+                if (this.reverseEngineered[defeatedShipName]) {
+                    this.showNotification(`🧬 ${defeatedShipName} already integrated into Hive. Build via Build Ships.`);
+                    return;
+                }
+
+                // Infect chance scales with number of infecting ships
+                const infectChance = Math.min(0.9, 0.25 + infectingShipCount * 0.05);
+                const captured = Math.random() < infectChance ? 1 : 0;
+
+                if (captured > 0) {
+                    this.capturedShips[defeatedShipName] = (this.capturedShips[defeatedShipName] || 0) + captured;
+                    const captureCount = this.capturedShips[defeatedShipName];
+
+                    this.showNotification(`🦠 INFECTED! Captured 1x ${defeatedShipName} (${captureCount}/3 for reverse-engineering)`);
+
+                    if (captureCount >= 3) {
+                        this.triggerReverseEngineer(defeatedShipName, defeatedShipData);
+                    }
+                } else {
+                    this.showNotification(`🦠 Infection attempt on ${defeatedShipName} failed — host resisted.`);
+                }
+
+                this.saveInfectData();
+                this.renderInfectPanel();
+            }
+
+            triggerReverseEngineer(shipName, shipData) {
+                this.initInfectData();
+                if (this.reverseEngineered[shipName]) return;
+
+                delete this.capturedShips[shipName];
+                this.reverseEngineered[shipName] = true;
+
+                // Register ship as buildable if not already in ships list
+                if (!this.ships[shipName]) {
+                    this.ships[shipName] = {
+                        ...(shipData || {}),
+                        name: shipName,
+                        count: 0,
+                        researched: true,
+                        reverseEngineered: true
+                    };
+                } else {
+                    this.ships[shipName].researched = true;
+                    this.ships[shipName].reverseEngineered = true;
+                }
+
+                this.showNotification(`🧬 REVERSE ENGINEERED! ${shipName} is now available in Build Ships!`);
+                this.saveInfectData();
+                this.renderShipBuildList();
+                this.renderInfectPanel();
+
+                // Dramatic modal
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.93);z-index:10010;display:flex;align-items:center;justify-content:center;';
+                modal.innerHTML = `
+                    <div style="background:linear-gradient(135deg,#1a0005,#0d0d0d);border:2px solid #8b0000;border-radius:16px;padding:36px;max-width:480px;text-align:center;box-shadow:0 0 60px rgba(139,0,0,0.6);">
+                        <div style="font-size:56px;margin-bottom:12px;">🧬</div>
+                        <div style="font-family:'Orbitron',sans-serif;font-size:22px;color:#ff4444;margin-bottom:8px;letter-spacing:2px;">HIVE INTEGRATION COMPLETE</div>
+                        <div style="color:#cc2222;font-size:14px;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px;">Reverse Engineering Successful</div>
+                        <div style="font-size:18px;color:#e8f0ff;font-weight:700;margin-bottom:12px;">${shipName}</div>
+                        <div style="color:#a0a0a0;font-size:13px;margin-bottom:24px;">The Viral Hive has consumed 3 samples and fully integrated the enemy vessel into its biomass architecture. This ship type is now available in <strong style="color:#ff4444;">Build Ships</strong>.</div>
+                        <button onclick="this.closest('div[style*=fixed]').remove()" style="padding:12px 32px;background:#8b0000;border:1px solid #cc0000;border-radius:8px;color:#fff;font-family:'Orbitron',sans-serif;font-size:14px;cursor:pointer;letter-spacing:1px;">ASSIMILATE</button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+
+            saveInfectData() {
+                try {
+                    localStorage.setItem('viralCapturedShips', JSON.stringify(this.capturedShips || {}));
+                    localStorage.setItem('viralReverseEngineered', JSON.stringify(this.reverseEngineered || {}));
+                } catch(e) {}
+            }
+
+            loadInfectData() {
+                try {
+                    this.capturedShips = JSON.parse(localStorage.getItem('viralCapturedShips') || '{}');
+                    this.reverseEngineered = JSON.parse(localStorage.getItem('viralReverseEngineered') || '{}');
+                } catch(e) {
+                    this.capturedShips = {};
+                    this.reverseEngineered = {};
+                }
+                // Re-apply reverse engineered ships as buildable
+                if (this.isViralRace()) {
+                    Object.keys(this.reverseEngineered).forEach(shipName => {
+                        if (this.ships[shipName]) {
+                            this.ships[shipName].researched = true;
+                            this.ships[shipName].reverseEngineered = true;
+                        }
+                    });
+                }
+            }
+
+            openInfectPanel() {
+                this.initInfectData();
+                let panel = document.getElementById('viralInfectPanel');
+                if (!panel) {
+                    panel = document.createElement('div');
+                    panel.id = 'viralInfectPanel';
+                    panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,#1a0005,#0d0d0d);border:2px solid #8b0000;border-radius:14px;padding:28px;min-width:520px;max-width:640px;z-index:10005;box-shadow:0 0 60px rgba(139,0,0,0.5);max-height:80vh;overflow-y:auto;';
+                    document.body.appendChild(panel);
+                }
+                this.renderInfectPanel();
+                panel.style.display = 'block';
+            }
+
+            renderInfectPanel() {
+                this.initInfectData();
+                const panel = document.getElementById('viralInfectPanel');
+                if (!panel || panel.style.display === 'none') return;
+
+                const capturedEntries = Object.entries(this.capturedShips);
+                const reEntries = Object.entries(this.reverseEngineered).filter(([,v]) => v);
+                const totalSlots = capturedEntries.length + reEntries.length;
+
+                panel.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                        <div style="font-family:'Orbitron',sans-serif;font-size:18px;color:#ff4444;letter-spacing:2px;">🦠 HIVE CAPTURE LOG</div>
+                        <button onclick="document.getElementById('viralInfectPanel').style.display='none'" style="background:transparent;border:1px solid #8b0000;border-radius:6px;color:#ff4444;padding:6px 14px;cursor:pointer;font-size:14px;">✕ Close</button>
+                    </div>
+                    <div style="font-size:12px;color:#8ba3c7;margin-bottom:18px;">Ship Slots Used: <span style="color:${totalSlots>=8?'#ff4444':'#ff9500'};font-weight:700;">${totalSlots} / 8</span> &nbsp;|&nbsp; Capture 3 of any ship type to reverse-engineer it.</div>
+
+                    ${capturedEntries.length > 0 ? `
+                        <div style="margin-bottom:18px;">
+                            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#8b0000;margin-bottom:10px;border-bottom:1px solid #3a0000;padding-bottom:6px;">IN CONTAINMENT</div>
+                            ${capturedEntries.map(([name, count]) => `
+                                <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(139,0,0,0.12);border:1px solid #3a0000;border-radius:8px;margin-bottom:8px;">
+                                    <div style="font-size:24px;">🦠</div>
+                                    <div style="flex:1;">
+                                        <div style="font-weight:700;color:#e8f0ff;font-size:14px;">${name}</div>
+                                        <div style="margin-top:4px;">
+                                            ${[1,2,3].map(i => `<span style="display:inline-block;width:18px;height:18px;border-radius:50%;background:${i<=count?'#8b0000':'#1a0005'};border:1px solid ${i<=count?'#cc0000':'#3a0000'};margin-right:4px;"></span>`).join('')}
+                                            <span style="color:#8ba3c7;font-size:11px;margin-left:6px;">${count}/3 samples</span>
+                                        </div>
+                                    </div>
+                                    ${count >= 3 ? `<button onclick="window.game.triggerReverseEngineer('${name}', window.game.ships['${name}'])" style="padding:6px 14px;background:#8b0000;border:1px solid #cc0000;border-radius:6px;color:#fff;cursor:pointer;font-size:12px;">🧬 Integrate</button>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : '<div style="color:#8ba3c7;font-size:13px;margin-bottom:18px;font-style:italic;">No ships currently in containment. Deploy Viral ships in battle to infect enemies.</div>'}
+
+                    ${reEntries.length > 0 ? `
+                        <div>
+                            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#22aa44;margin-bottom:10px;border-bottom:1px solid #003a11;padding-bottom:6px;">REVERSE ENGINEERED — BUILDABLE</div>
+                            ${reEntries.map(([name]) => `
+                                <div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(0,139,50,0.08);border:1px solid #003a11;border-radius:8px;margin-bottom:8px;">
+                                    <div style="font-size:22px;">🧬</div>
+                                    <div style="flex:1;font-weight:700;color:#e8f0ff;font-size:13px;">${name}</div>
+                                    <div style="font-size:11px;color:#22aa44;font-weight:700;">✓ INTEGRATED</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                `;
+            }
+
+            // Simulate infect attempt — callable from battle result UI
+            simulateInfectAttempt(enemyShipName) {
+                if (!this.isViralRace()) {
+                    this.showNotification('⚠️ Only The Viral Race can infect enemy ships.');
+                    return;
+                }
+                // Build a basic ship data skeleton from any known ship in SHIP_CLASSES
+                const allRaceShips = Object.values(SHIP_CLASSES).flat();
+                const shipTemplate = allRaceShips.find(s => s.name === enemyShipName) || { name: enemyShipName };
+                // Count how many infect-capable ships the player has
+                const viralShips = SHIP_CLASSES['The Viral Race'] || [];
+                const infectShips = viralShips.filter(s => s.infectAbility);
+                let infectCount = 0;
+                infectShips.forEach(s => { infectCount += (this.ships[s.name]?.count || 0); });
+                this.attemptInfect(enemyShipName, shipTemplate, infectCount);
+            }
+
+            // ========== END VIRAL INFECT SYSTEM ==========
+
             updateBuildQueue() {
                 if (this.buildQueue.length === 0) return;
                 
