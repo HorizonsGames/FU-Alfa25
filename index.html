@@ -7732,7 +7732,7 @@
                 let html = '<div class="assignment-list">';
                 
                 if (type === 'planet') {
-                    this.game.planets.filter(p => p.ownedBy === 'player').forEach(planet => {
+                    this.game.planets.filter(p => p.owner === this.game.selectedRace.name).forEach(planet => {
                         const currentAssignment = this.game.commanderAssignments.planets[planet.id];
                         const isAssigned = !!currentAssignment;
                         
@@ -7773,13 +7773,21 @@
             confirmAssignment(targetId) {
                 if (this.assignmentType === 'planet') {
                     this.game.commanderAssignments.planets[targetId] = this.selectedCommander;
+                    const planet = this.game.planets.find(p => p.id === targetId);
+                    this.game.showNotification('\u{1F4CC} Commander assigned to ' + (planet ? planet.name : 'planet') + '!');
                 } else {
                     this.game.commanderAssignments.fleets[targetId] = this.selectedCommander;
+                    this.game.showNotification('\u{1F4CC} Commander assigned to fleet!');
                 }
-                
+
                 this.closeAssignmentModal();
                 this.refreshView();
-                
+
+                // Advance tutorial step 11
+                if (window.tutorialManager && typeof window.tutorialManager.completeAction === 'function') {
+                    window.tutorialManager.completeAction('commander_assigned');
+                }
+
                 if (window.chatManager) {
                     chatManager.addMessage('SYSTEM', 'Commander assigned successfully!', 'system');
                 }
@@ -21932,7 +21940,7 @@ window.tutorialManager = (() => {
             hint: 'You can only assign one commander per planet or fleet — choose the right commander for the job.',
             target: '.header-commanders-btn',
             position: 'below',
-            waitFor: null
+            waitFor: 'commander_assigned'
         },
         // ── 12. Commander Stacking ───────────────────────────────────────
         {
@@ -22406,6 +22414,15 @@ window.tutorialManager = (() => {
             window.game.commanderManager.openPanel = function() {
                 origOpen();
                 completeAction('commander_open');
+            };
+        }
+
+        // Commander assignment (step 11)
+        if (window.game.commanderManager) {
+            const origConfirmAssign = window.game.commanderManager.confirmAssignment.bind(window.game.commanderManager);
+            window.game.commanderManager.confirmAssignment = function(targetId) {
+                origConfirmAssign(targetId);
+                completeAction('commander_assigned');
             };
         }
 
