@@ -11031,6 +11031,7 @@ const SHIP_IMAGE_DATA = {
                 };
                 const DIFF_COLORS = { 'Easy': '#00ff88', 'Medium': '#ffaa00', 'Hard': '#ff4444' };
                 const container = document.getElementById('raceOptions');
+                if (!container) return; // login screen not present — skip safely
                 container.innerHTML = RACES.map(race => {
                     const logo = RACE_LOGOS[race.name] || '';
                     const diffColor = DIFF_COLORS[race.difficulty] || '#8ba3c7';
@@ -12248,7 +12249,7 @@ const SHIP_IMAGE_DATA = {
                     const infectTab = document.getElementById('fleetTabInfect');
                     if (infectTab) infectTab.style.display = this.selectedRace.name === 'The Viral Race' ? 'inline-block' : 'none';
                     // Load Viral infect/capture persistence
-                    if (this.selectedRace.name === 'The Viral Race') { this.loadInfectData(); }
+                    if (this.selectedRace.name === 'The Viral Race' && typeof this.loadInfectData === 'function') { this.loadInfectData(); }
                     
                     // Set account type badge and admin panel visibility
                     const accountType = playerData.accountType || 'Player';
@@ -13837,7 +13838,7 @@ const SHIP_IMAGE_DATA = {
                         this.showNotification(`✨ Victory! ${target.name} captured! (Lost 20% of fleet)`);
 
                         // Viral Race: attempt infect on enemy defending ships
-                        if (this.isViralRace && this.isViralRace() && target.fleets) {
+                        if (typeof this.isViralRace === 'function' && this.isViralRace() && target.fleets) {
                             const allRaceShips = Object.values(SHIP_CLASSES).flat();
                             const viralShips = SHIP_CLASSES['The Viral Race'] || [];
                             let infectCount = 0;
@@ -16047,7 +16048,7 @@ const SHIP_IMAGE_DATA = {
                 const allShips = [...researchedShips, ...specialShips];
                 
                 // For Viral Race: add reverse-engineered ships as buildable
-                if (this.isViralRace && this.isViralRace()) {
+                if (typeof this.isViralRace === 'function' && this.isViralRace()) {
                     this.initInfectData();
                     Object.keys(this.reverseEngineered).forEach(shipName => {
                         if (!this.ships[shipName]) return;
@@ -19606,56 +19607,52 @@ const SHIP_IMAGE_DATA = {
         function changeRace() {
             // For test version - simple race change without auth
             if (!game) return;
-            
-            // Show race selection modal
-            const modal = document.createElement('div');
+
+            var RACE_LOGOS = {
+                'Terran Empire':     'Terran-logo.jpg',
+                'Kor\'ai Dynasty':   'korai-logo.jpg',
+                'Reaper Collective': 'reapers-logo.jpg',
+                'The Ascended':      'ascended-logo.jpg',
+                'The Viral Race':    'viral-logo.jpg'
+            };
+            var DIFF_COLORS = { 'Easy': '#00ff88', 'Medium': '#ffaa00', 'Hard': '#ff4444' };
+
+            var raceCardsHTML = '';
+            RACES.forEach(function(race) {
+                var logo = RACE_LOGOS[race.name] || '';
+                var diffColor = DIFF_COLORS[race.difficulty] || '#8ba3c7';
+                var imgTag = logo
+                    ? '<img src="' + logo + '" alt="' + race.name + '" style="width:100%;height:140px;object-fit:cover;object-position:center;display:block;">'
+                    : '<div style="height:100px;background:' + race.color + '22;display:flex;align-items:center;justify-content:center;font-size:36px;">⚔️</div>';
+                raceCardsHTML += '<div'
+                    + ' onclick="selectNewRace(\'' + race.name.replace(/'/g, "\\'") + '\')"'
+                    + ' style="cursor:pointer;border-radius:10px;border:2px solid rgba(255,255,255,0.08);overflow:hidden;transition:all 0.3s;background:var(--bg-tertiary);"'
+                    + ' onmouseover="this.style.borderColor=\'' + race.color + '\';this.style.boxShadow=\'0 0 20px ' + race.color + '44\';"'
+                    + ' onmouseout="this.style.borderColor=\'rgba(255,255,255,0.08)\';this.style.boxShadow=\'none\';"'
+                    + '>'
+                    + imgTag
+                    + '<div style="padding:12px 14px 10px;">'
+                    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+                    + '<div style="font-weight:800;font-size:13px;color:' + race.color + ';font-family:Orbitron,sans-serif;">' + race.name + '</div>'
+                    + '<div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:' + diffColor + '22;color:' + diffColor + ';border:1px solid ' + diffColor + ';text-transform:uppercase;">' + race.difficulty + '</div>'
+                    + '</div>'
+                    + '<div style="font-size:11px;color:var(--text-secondary);line-height:1.4;">' + race.description + '</div>'
+                    + '</div></div>';
+            });
+
+            var modal = document.createElement('div');
             modal.id = 'raceChangeModal';
-            modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.95); z-index: 10003; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 20px;';
-            
-            modal.innerHTML = `
-                <div style="background: var(--bg-secondary); border: 2px solid var(--accent-primary); border-radius: 12px; padding: 30px; max-width: 800px; width: 100%;">
-                    <h2 style="color: var(--accent-primary); font-family: 'Orbitron', sans-serif; font-size: 28px; margin-bottom: 20px; text-align: center;">🎭 SELECT NEW RACE</h2>
-                    
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
-                        ${(function() {
-                            const RACE_LOGOS = {
-                                'Terran Empire':     'Terran-logo.jpg',
-                                "Kor'ai Dynasty":    'korai-logo.jpg',
-                                'Reaper Collective': 'reapers-logo.jpg',
-                                'The Ascended':      'ascended-logo.jpg',
-                                'The Viral Race':    'viral-logo.jpg'
-                            };
-                            const DIFF_COLORS = { 'Easy': '#00ff88', 'Medium': '#ffaa00', 'Hard': '#ff4444' };
-                            return RACES.map(race => {
-                                const logo = RACE_LOGOS[race.name];
-                                const diffColor = DIFF_COLORS[race.difficulty] || '#8ba3c7';
-                                return \`
-                                <div onclick="selectNewRace('\${race.name}')"
-                                     style="cursor:pointer;border-radius:10px;border:2px solid rgba(255,255,255,0.08);overflow:hidden;transition:all 0.3s;background:var(--bg-tertiary);"
-                                     onmouseover="this.style.borderColor='\${race.color}';this.style.boxShadow='0 0 20px \${race.color}44';"
-                                     onmouseout="this.style.borderColor='rgba(255,255,255,0.08)';this.style.boxShadow='none';">
-                                    \${logo ? \`<img src="\${logo}" alt="\${race.name}" style="width:100%;height:140px;object-fit:cover;object-position:center;display:block;">\` : ''}
-                                    <div style="padding:12px 14px 10px;">
-                                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                                            <div style="font-weight:800;font-size:13px;color:\${race.color};font-family:'Orbitron',sans-serif;">\${race.name}</div>
-                                            <div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:\${diffColor}22;color:\${diffColor};border:1px solid \${diffColor};text-transform:uppercase;">\${race.difficulty}</div>
-                                        </div>
-                                        <div style="font-size:11px;color:var(--text-secondary);line-height:1.4;">\${race.description}</div>
-                                    </div>
-                                </div>\`;
-                            }).join('');
-                        })()}
-                    </div>
-                    
-                    <button onclick="document.getElementById('raceChangeModal').remove()" class="btn" style="width: 100%; background: var(--bg-tertiary);">
-                        Cancel
-                    </button>
-                </div>
-            `;
-            
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:10003;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:20px;';
+            modal.innerHTML = '<div style="background:var(--bg-secondary);border:2px solid var(--accent-primary);border-radius:12px;padding:30px;max-width:860px;width:100%;">'
+                + '<h2 style="color:var(--accent-primary);font-family:Orbitron,sans-serif;font-size:26px;margin-bottom:20px;text-align:center;">🎭 SELECT NEW RACE</h2>'
+                + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:20px;">'
+                + raceCardsHTML
+                + '</div>'
+                + '<button onclick="document.getElementById(\'raceChangeModal\').remove()" class="btn" style="width:100%;margin-top:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);">Cancel</button>'
+                + '</div>';
+
             document.body.appendChild(modal);
         }
-        
         function selectNewRace(raceName) {
             const race = RACES.find(r => r.name === raceName);
             if (!race || !game) return;
@@ -21611,7 +21608,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // Default test player
     const testPlayer = {
         username: 'TestCommander',
-        race: 'Terran',
+        race: 'Terran Empire',
         credits: 100000,
         resources: {
             metal: 50000,
