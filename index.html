@@ -8207,7 +8207,7 @@
                 }
                 
                 // Poll for new messages every 2 seconds (simulates real-time)
-                setInterval(() => this.checkForNewMessages(), 2000);
+                this.pollInterval = setInterval(() => this.checkForNewMessages(), 2000);
             }
             
             logEvent(message, type = 'info') {
@@ -8705,6 +8705,10 @@
                 };
                 
                 this.messages.push(message);
+                // Cap messages to prevent unbounded memory growth
+                if (this.messages.length > 200) {
+                    this.messages = this.messages.slice(-200);
+                }
                 this.saveMessages();
                 this.renderMessages();
                 
@@ -10779,17 +10783,27 @@ const SHIP_IMAGE_DATA = {
     'Transcendence Battleship': 'assets/asset_051.jpg',
     'Rebirth Battleship': 'assets/asset_052.jpg',
     'Holy Endeavour Capitol Ship': 'assets/asset_053.jpg',
+  },
+  'The Viral Race': {
+    'The Rabies':  'Rabies.png',
+    'The Anthrax': 'Anthrax.png',
+    'The Zika':    'Zika.png',
+    'The COVID':   'covid.png'
   }
 };
         
         // Image loader using embedded base64 data
         class ImageLoader {
             async loadImage(filename, raceName, shipName) {
-                // Return embedded image data directly
+                // Try SHIP_IMAGE_DATA first (asset-mapped images)
                 if (typeof SHIP_IMAGE_DATA !== 'undefined' && SHIP_IMAGE_DATA[raceName]?.[shipName]) {
                     return SHIP_IMAGE_DATA[raceName][shipName];
                 }
-                console.warn('No image data found for:', raceName, shipName);
+                // Fallback: use the filename directly (for uploaded images like Viral Race ships)
+                if (filename) {
+                    return filename;
+                }
+                console.warn('No image found for:', raceName, shipName);
                 return null;
             }
         }
@@ -12504,7 +12518,7 @@ const SHIP_IMAGE_DATA = {
                     }, 30000);
 
                     // World Boss HUD live-refresh (every 2s when active)
-                    setInterval(() => {
+                    this.worldBossHUDInterval = setInterval(() => {
                         if (this.worldBoss && this.worldBoss.isActive) {
                             this.renderWorldBossHUD();
                         }
@@ -12574,9 +12588,26 @@ const SHIP_IMAGE_DATA = {
                 if (this.mapAnimating) return;
                 this.mapAnimating = true;
                 
-                const animate = () => {
+                // Pause animation when tab is hidden to save CPU
+                if (!this._visibilityHandler) {
+                    this._visibilityHandler = () => {
+                        if (document.hidden) {
+                            this.stopMapAnimation();
+                        } else if (!this.mapAnimating) {
+                            this.startMapAnimation();
+                        }
+                    };
+                    document.addEventListener('visibilitychange', this._visibilityHandler);
+                }
+                
+                let _lastMapFrame = 0;
+                const _mapFps = 1000 / 30; // cap at 30fps
+                const animate = (timestamp) => {
                     if (!this.mapAnimating) return;
-                    this.updateMapFrame();
+                    if (timestamp - _lastMapFrame >= _mapFps) {
+                        _lastMapFrame = timestamp;
+                        this.updateMapFrame();
+                    }
                     requestAnimationFrame(animate);
                 };
                 
@@ -12593,7 +12624,16 @@ const SHIP_IMAGE_DATA = {
                 clearInterval(this.buildInterval);
                 clearInterval(this.serverInfoInterval);
                 clearInterval(this.autoSaveInterval);
+                if (this.worldBossHUDInterval) clearInterval(this.worldBossHUDInterval);
                 this.stopMapAnimation();
+                if (this._visibilityHandler) {
+                    document.removeEventListener('visibilitychange', this._visibilityHandler);
+                    this._visibilityHandler = null;
+                }
+                if (this._resizeHandler) {
+                    window.removeEventListener('resize', this._resizeHandler);
+                    this._resizeHandler = null;
+                }
                 if (this._resizeHandler) {
                     window.removeEventListener('resize', this._resizeHandler);
                     this._resizeHandler = null;
@@ -12620,10 +12660,10 @@ const SHIP_IMAGE_DATA = {
                 if (!this.starField) {
                     this.starField = {
                         layers: [
-                            { stars: [], count: 200, size: 1, speed: 0.02, brightness: 0.8, color: '#ffffff' },
-                            { stars: [], count: 150, size: 1.5, speed: 0.015, brightness: 0.6, color: '#aaddff' },
-                            { stars: [], count: 100, size: 2, speed: 0.01, brightness: 0.5, color: '#ffddaa' },
-                            { stars: [], count: 50, size: 2.5, speed: 0.005, brightness: 0.7, color: '#ffaadd' }
+                            { stars: [], count: 80, size: 1, speed: 0.02, brightness: 0.8, color: '#ffffff' },
+                            { stars: [], count: 60, size: 1.5, speed: 0.015, brightness: 0.6, color: '#aaddff' },
+                            { stars: [], count: 40, size: 2, speed: 0.01, brightness: 0.5, color: '#ffddaa' },
+                            { stars: [], count: 20, size: 2.5, speed: 0.005, brightness: 0.7, color: '#ffaadd' }
                         ],
                         time: 0
                     };
@@ -15930,7 +15970,7 @@ const SHIP_IMAGE_DATA = {
                         hitPoints: ship.hitPoints
                     });
                     
-                    console.log('Research queue after push:', this.researchQueue);
+                    // [removed debug log]
                     
                     this.updateResources();
                     this.renderResearch();
@@ -15945,18 +15985,15 @@ const SHIP_IMAGE_DATA = {
                 // Process ship research queue
                 if (this.researchQueue.length === 0) return;
                 
-                console.log('updateResearch called, queue:', this.researchQueue);
-                
                 this.researchQueue = this.researchQueue.map(research => {
                     research.timeRemaining -= 1;
-                    console.log(`Research ${research.name}: ${research.timeRemaining}s remaining`);
                     
                     if (research.timeRemaining <= 0) {
                         // Mark ship as researched
                         if (this.ships[research.name]) {
                             this.ships[research.name].researched = true;
                             this.ships[research.name].count += 1;
-                            console.log(`Research complete for ${research.name}!`);
+                            // [removed debug log]
                         }
                         this.showNotification(`✅ ${research.name} research complete! +1 ship added to fleet`);
                         this.renderShips();
@@ -16525,11 +16562,8 @@ const SHIP_IMAGE_DATA = {
             updateBuildQueue() {
                 if (this.buildQueue.length === 0) return;
                 
-                console.log('updateBuildQueue called, queue:', this.buildQueue);
-                
                 this.buildQueue = this.buildQueue.map(build => {
                     build.timeRemaining -= 1;
-                    console.log(`Building ${build.quantity}x ${build.shipName}: ${build.timeRemaining}s remaining`);
                     
                     if (build.timeRemaining <= 0) {
                         // Build complete
@@ -17201,6 +17235,13 @@ const SHIP_IMAGE_DATA = {
                     this.resources.population = this.resources.population || 0;
                     this.resources.researchPoints = this.resources.researchPoints || 90;
                     
+                    // Memoize: skip all DOM writes if integer values unchanged
+                    const _mc = Math.floor(this.resources.credits);
+                    const _mm = Math.floor(this.resources.metal);
+                    const _mh = Math.floor(this.resources.he3);
+                    if (this._lastCredits === _mc && this._lastMetal === _mm && this._lastHe3 === _mh) return;
+                    this._lastCredits = _mc; this._lastMetal = _mm; this._lastHe3 = _mh;
+
                     document.getElementById('credits').textContent = this.resources.credits.toLocaleString();
                     document.getElementById('metal').textContent = this.resources.metal.toLocaleString();
                     document.getElementById('he3').textContent = this.resources.he3.toLocaleString();
@@ -20299,7 +20340,7 @@ const SHIP_IMAGE_DATA = {
         }
 
         // Auto-refresh bounties every 30 seconds
-        setInterval(() => {
+        window._bountiesInterval = setInterval(() => {
             const panel = document.getElementById('bountiesPanel');
             if (panel && panel.style.display !== 'none') {
                 updateBountiesDisplay();
@@ -23525,7 +23566,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
 
         // Check for expired bonuses periodically
-        setInterval(() => {
+        window._tempBonusInterval = setInterval(() => {
             if (window.game && window.game.temporaryBonuses && window.game.temporaryBonuses.length > 0) {
                 recalculateTechBonuses();
                 updateActiveBonuses();
