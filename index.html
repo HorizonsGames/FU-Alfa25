@@ -4539,11 +4539,13 @@
         }
         
         .card-reveal {
-            animation: cardFlip 0.8s ease-in-out, cardGlow 2s ease-in-out 0.8s 3;
+            animation: cardFlip 0.8s ease-in-out forwards, cardGlow 2s ease-in-out 0.8s 3;
+            animation-fill-mode: forwards;
         }
         
         .card-reveal-rare {
-            animation: cardFlip 1s ease-in-out, rareGlow 2s ease-in-out 1s 5;
+            animation: cardFlip 1s ease-in-out forwards, rareGlow 2s ease-in-out 1s 3;
+            animation-fill-mode: forwards;
         }
         
         /* HORIZON COIN PACKS PANEL */
@@ -7334,7 +7336,8 @@
             
             switchTab(tab) {
                 this.currentTab = tab;
-                
+                this._lastFingerprint = null; // force re-render on tab switch
+
                 document.querySelectorAll('.commander-tab').forEach(btn => btn.classList.remove('active'));
                 const tabBtn = document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
                 if (tabBtn) tabBtn.classList.add('active');
@@ -7342,10 +7345,15 @@
                 this.refreshView();
             }
             
-            refreshView() {
+            refreshView(force = false) {
                 const content = document.getElementById('commanderContent');
                 if (!content) return;
-                
+
+                // Build a lightweight fingerprint to skip no-op re-renders
+                const fingerprint = this.currentTab + '|' + (this.game.commanders ? this.game.commanders.length : 0) + '|' + this.game.horizonCoins;
+                if (!force && this._lastFingerprint === fingerprint) return;
+                this._lastFingerprint = fingerprint;
+
                 switch(this.currentTab) {
                     case 'collection':
                         content.innerHTML = this.renderCollection();
@@ -7390,7 +7398,7 @@
                     html += `
                         <div class="commander-card rarity-${rarityClass}">
                             <div class="commander-card-image" style="position: relative; overflow: hidden;">
-                                ${commander.image ? '<img src="assets/' + commander.image + '" style="width: 100%; height: 100%; object-fit: contain; object-position: center center; display: block;" onerror="this.onerror=null; this.src=\'\'; this.style.display=\'none\'; this.parentElement.innerHTML+=\'<span style=\\\'font-size: 80px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1;\\\'>👤</span>\'">' : '<span style="font-size: 80px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1;">👤</span>'}
+                                ${commander.image ? '<img src="assets/' + commander.image + '" loading="lazy" style="width: 100%; height: 100%; object-fit: contain; object-position: center center; display: block;" onerror="this.onerror=null; this.style.display=\'none\'; this.nextElementSibling.style.display=\'flex\';">' : ''}<span class="cmd-img-fallback" style="font-size: 80px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1; display: ${commander.image ? 'none' : 'flex'};">👤</span>
                                 <div class="commander-rarity-badge ${rarityClass}">${rarityInfo.name}</div>
                                 ${commander.stars > 0 ? `<div class="commander-stars">${stars}</div>` : ''}
                             </div>
@@ -7592,6 +7600,7 @@
                     chatManager.addMessage('SYSTEM', `✨ GACHA PULL! You obtained ${randomCommander.name} (${rarity})!`, 'system');
                 }
                 
+                this._lastFingerprint = null; // invalidate cache after purchase
                 this.game.updateUI();
             }
             
@@ -7617,7 +7626,7 @@
                 content.innerHTML = `
                     <div class="commander-card rarity-${rarityClass} card-reveal-rare" id="revealCard" style="transform: scale(1.2);">
                         <div class="commander-card-image" style="position: relative; overflow: hidden;">
-                            ${commander.image ? '<img src="assets/' + commander.image + '" style="width: 100%; height: 100%; object-fit: contain; object-position: center center; display: block;" onerror="this.style.display=\'none\'; this.parentElement.innerHTML+=\'<span style=\\\'font-size: 80px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1;\\\'>👤</span>\'">' : '<span style="font-size: 80px; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1;">👤</span>'}
+                            ${commander.image ? '<img loading="lazy" src="assets/' + commander.image + '" style="width: 100%; height: 100%; object-fit: contain; object-position: center center; display: block;" onerror="this.onerror=null;this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">' : ''}<span class="cmd-img-fallback" style="font-size:80px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1;display:${commander.image?'none':'flex'}">👤</span>
                             <div class="commander-rarity-badge ${rarityClass}">${rarityInfo.name}</div>
                             <div class="commander-stars">⭐</div>
                         </div>
@@ -7630,7 +7639,7 @@
                                 ${this.renderBonuses(commander.bonuses)}
                             </div>
                             
-                            <button onclick="document.getElementById('commanderRevealModal').style.display='none'; window.game.commanderManager.refreshView();" 
+                            <button onclick="(function(){ var m=document.getElementById('commanderRevealModal'); m.style.display='none'; var rc=document.getElementById('revealCard'); if(rc){rc.className=rc.className.replace(/card-reveal[\\w-]*/g,'').trim();} document.getElementById('commanderRevealContent').innerHTML=''; window.game.commanderManager.refreshView(); })();" 
                                 style="width: 100%; padding: 14px; background: linear-gradient(135deg, var(--accent-secondary), #00cc66); border: none; border-radius: 6px; color: white; font-weight: 700; cursor: pointer; font-size: 16px; text-transform: uppercase; margin-top: 16px;">
                                 COLLECT!
                             </button>
@@ -18126,7 +18135,7 @@ const SHIP_IMAGE_DATA = {
                         <div class="tech-node researched">
                             <div class="tech-status-badge researched">✓ OWNED</div>
                             ${artifactDef.image
-                                ? `<div class="tech-icon" style="padding:0;overflow:hidden;border-radius:8px;"><img src="${artifactDef.image}" alt="${artifactDef.name}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.innerHTML='${artifactDef.icon}'"></div>`
+                                ? `<div class="tech-icon" style="padding:0;overflow:hidden;border-radius:8px;"><img src="${artifactDef.image}" alt="${artifactDef.name}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.onerror=null;this.style.display='none';"></div>`
                                 : `<div class="tech-icon">${artifactDef.icon}</div>`
                             }
                             <div class="tech-name">${artifactDef.name}</div>
