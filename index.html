@@ -5775,6 +5775,45 @@
                     </div>
                 </div>
                 
+                <!-- ── Resource Generation ─────────────────────────────── -->
+                <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+                    <h3 style="color: var(--accent-secondary); margin-bottom: 6px;">💰 Resource Generation</h3>
+                    <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 16px;">Add resources directly to the current player's account.</p>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px;">
+
+                        <button onclick="adminAddCredits()" class="btn"
+                            style="background: linear-gradient(135deg, #ffd700, #ff8800); color: #000; font-weight: 800; font-family: 'Orbitron', sans-serif; letter-spacing: 0.5px; padding: 14px;">
+                            💳 +10,000,000 Credits
+                        </button>
+
+                        <button onclick="adminAddMetal()" class="btn"
+                            style="background: linear-gradient(135deg, #8ba3c7, #4a6fa5); color: #fff; font-weight: 800; font-family: 'Orbitron', sans-serif; letter-spacing: 0.5px; padding: 14px;">
+                            ⛏️ +10,000,000 Metal
+                        </button>
+
+                        <button onclick="adminAddFood()" class="btn"
+                            style="background: linear-gradient(135deg, #00ff88, #00aa44); color: #000; font-weight: 800; font-family: 'Orbitron', sans-serif; letter-spacing: 0.5px; padding: 14px;">
+                            🌾 +10,000,000 Food
+                        </button>
+
+                        <button onclick="adminAddResearch()" class="btn"
+                            style="background: linear-gradient(135deg, #a855f7, #6d28d9); color: #fff; font-weight: 800; font-family: 'Orbitron', sans-serif; letter-spacing: 0.5px; padding: 14px;">
+                            🔬 +250 Research Points
+                        </button>
+
+                        <button onclick="adminAddHorizonCoins()" class="btn"
+                            style="background: linear-gradient(135deg, #00d9ff, #0066ff); color: #fff; font-weight: 800; font-family: 'Orbitron', sans-serif; letter-spacing: 0.5px; padding: 14px;">
+                            💎 +5,000 Horizon Coins
+                        </button>
+
+                    </div>
+
+                    <div id="adminResourceLog" style="margin-top: 14px; padding: 10px 14px; background: var(--bg-primary); border-radius: 6px; border: 1px solid var(--border-color); font-size: 12px; color: var(--text-secondary); min-height: 36px; font-family: monospace;">
+                        Resource actions will appear here...
+                    </div>
+                </div>
+
                 <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 20px;">
                     <h3 style="color: var(--accent-primary); margin-bottom: 16px;">Admin Tools</h3>
                     
@@ -19893,6 +19932,60 @@ const SHIP_IMAGE_DATA = {
             }
         }
         
+        // ── Admin Resource Generation Functions ──────────────────────────────
+
+        function adminResourceLog(msg) {
+            const log = document.getElementById('adminResourceLog');
+            if (log) {
+                const ts = new Date().toLocaleTimeString();
+                log.innerHTML = '<span style="color:var(--accent-secondary);">[' + ts + ']</span> ' + msg;
+            }
+        }
+
+        function adminAddCredits() {
+            if (!window.game) { adminResourceLog('&#9888; Game not loaded.'); return; }
+            window.game.resources.credits = (window.game.resources.credits || 0) + 10000000;
+            window.game._lastCredits = null;
+            window.game.updateResources();
+            adminResourceLog('&#128179; Added <strong style="color:#ffd700;">10,000,000 Credits</strong>. Total: ' + window.game.resources.credits.toLocaleString());
+        }
+
+        function adminAddMetal() {
+            if (!window.game) { adminResourceLog('&#9888; Game not loaded.'); return; }
+            window.game.resources.metal = (window.game.resources.metal || 0) + 10000000;
+            window.game._lastMetal = null;
+            window.game.updateResources();
+            adminResourceLog('&#9935; Added <strong style="color:#8ba3c7;">10,000,000 Metal</strong>. Total: ' + window.game.resources.metal.toLocaleString());
+        }
+
+        function adminAddFood() {
+            if (!window.game) { adminResourceLog('&#9888; Game not loaded.'); return; }
+            window.game.resources.food = (window.game.resources.food || 0) + 10000000;
+            window.game.resources.he3  = (window.game.resources.he3  || 0) + 10000000;
+            window.game._lastHe3 = null;
+            window.game.updateResources();
+            adminResourceLog('&#127807; Added <strong style="color:#00ff88;">10,000,000 Food</strong>. Total: ' + (window.game.resources.food || window.game.resources.he3).toLocaleString());
+        }
+
+        function adminAddResearch() {
+            if (!window.game) { adminResourceLog('&#9888; Game not loaded.'); return; }
+            window.game.resources.researchPoints = (window.game.resources.researchPoints || 0) + 250;
+            window.game.updateResources();
+            adminResourceLog('&#128300; Added <strong style="color:#a855f7;">250 Research Points</strong>. Total: ' + window.game.resources.researchPoints.toLocaleString());
+        }
+
+        function adminAddHorizonCoins() {
+            if (!window.game) { adminResourceLog('&#9888; Game not loaded.'); return; }
+            window.game.horizonCoins = (window.game.horizonCoins || 0) + 5000;
+            // Refresh commander shop display if open
+            if (window.game.commanderManager) {
+                window.game.commanderManager._lastFingerprint = null;
+                window.game.commanderManager.refreshView();
+            }
+            adminResourceLog('&#128142; Added <strong style="color:#00d9ff;">5,000 Horizon Coins</strong>. Total: ' + window.game.horizonCoins.toLocaleString());
+        }
+
+
         function loadPlayerList() {
             const playerList = document.getElementById('playerList');
             if (!dbManager) {
