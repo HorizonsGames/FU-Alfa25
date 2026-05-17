@@ -6258,7 +6258,7 @@
                 color: '#8b0000',
                 description: 'Biological annihilators - A galaxy-spanning plague reawakened by the screams of the dying',
                 difficulty: 'Hard',
-                modifiers: { mining: 15, population: 90, military: 95, credits: 10 },
+                modifiers: { mining: 15, population: 315, military: 95, credits: 10, foodProduction: 225 },
                 story: `They are not a civilization. They are a catastrophe that remembers itself. Before the Tarren Coalition, before the Kor\'ai trade routes, before the Reapers seized their first warship, the galaxy trembled before the Viral Race—a distributed biological holocaust that consumed the Guardian Peoples and left nothing but irradiated ruins and obsidian warnings. The Guardians did not defeat them. They only built a prison. And now the prison doors are opening. Reawakened by millennia of galactic warfare—the radiation, the psionic echoes of mass death, the screaming resonance of a galaxy at war with itself—the dormant spores and hive structures buried across forgotten systems have begun to pulse once more. Their ships are not built. They grow. Hulls of fused steel and swollen flesh. Corridors that breathe. Walls threaded with nervous-system tendrils. Their consumed worlds do not fall—they transform, oceans thickening to black-red sludge, forests becoming fields of pulsating organic growth, cities dissolving beneath mountains of spreading tissue. No cure has ever been discovered. No negotiation has ever been attempted. There is only the Hunger.`
             }
         ];
@@ -8775,7 +8775,27 @@
             }
             
             checkForNewMessages() {
+                // Only re-parse when the update timestamp has actually changed
                 const lastUpdate = localStorage.getItem('stellarCommandChatUpdate');
+                if (lastUpdate === this._lastChatUpdate) {
+                    // Still check guild chat (separate key, cheap check)
+                    const guildId = window.game && window.game.guildId;
+                    if (guildId) {
+                        const updateKey = `fu_guildChatUpdate_${guildId}`;
+                        const lastGuildUpdate = localStorage.getItem(updateKey);
+                        if (lastGuildUpdate !== this._lastGuildChatPoll) {
+                            this._lastGuildChatPoll = lastGuildUpdate;
+                            const chatWindow = document.getElementById('chatWindow');
+                            const isVisible = chatWindow && chatWindow.style.display !== 'none';
+                            if (this.currentTab === 'guild' && isVisible && !this.isMinimized) {
+                                this.renderGuildChatInline();
+                            }
+                        }
+                    }
+                    return;
+                }
+                this._lastChatUpdate = lastUpdate;
+
                 const storedMessages = localStorage.getItem('stellarCommandChat');
                 
                 if (storedMessages) {
@@ -8815,7 +8835,7 @@
                     }
                 }
             }
-            
+
             showNewMessageNotification() {
                 // Flash the chat header or show a notification
                 if (typeof auth === 'undefined' || !auth.db) return;
@@ -9079,22 +9099,26 @@
             }
             
             startBotActivities() {
+                // Guard: prevent duplicate intervals if called more than once
+                if (this._activitiesStarted) return;
+                this._activitiesStarted = true;
+
                 // General bot chatter — 20% chance every 15s (~once per 75s on average)
-                setInterval(() => {
+                this._chatInterval = setInterval(() => {
                     if (Math.random() < 0.20) {
                         this.randomBotChat();
                     }
                 }, 15000);
 
                 // Dedicated player taunts — 15% chance every 45s (~once per 5 min)
-                setInterval(() => {
+                this._tauntInterval = setInterval(() => {
                     if (Math.random() < 0.15) {
                         this.botTauntPlayer();
                     }
                 }, 45000);
 
                 // Update bot last login times to simulate activity
-                setInterval(() => {
+                this._loginSimInterval = setInterval(() => {
                     this.bots.forEach(bot => {
                         if (Math.random() < 0.3) {
                             bot.lastLogin = Date.now();
@@ -9103,15 +9127,15 @@
                 }, 60000);
 
                 // AI Gameplay Behavior - runs every 30 seconds
-                setInterval(() => {
+                this._behaviorInterval = setInterval(() => {
                     this.updateBotBehavior();
                 }, 30000);
 
-                // Dedicated live-player attack interval — random between 5 min and 1 hour
-                // Only fires if player power rating is above 500
+                // Dedicated live-player attack interval — random between ~9 min and ~1h 49min
+                // Frequency reduced by 45% from original (5 min–1 hr window)
                 const scheduleBotAttack = () => {
-                    const minMs = 5 * 60 * 1000;       // 5 minutes
-                    const maxMs = 60 * 60 * 1000;      // 1 hour
+                    const minMs = 9.09 * 60 * 1000;    // ~9 min (5 min ÷ 0.55)
+                    const maxMs = 109.09 * 60 * 1000;  // ~109 min (60 min ÷ 0.55)
                     const delay = minMs + Math.random() * (maxMs - minMs);
                     setTimeout(() => {
                         // Reschedule next attack regardless of outcome
@@ -9280,6 +9304,14 @@
                 }
             }
             
+            stopBotActivities() {
+                clearInterval(this._chatInterval);
+                clearInterval(this._tauntInterval);
+                clearInterval(this._loginSimInterval);
+                clearInterval(this._behaviorInterval);
+                this._activitiesStarted = false;
+            }
+
             botAttackPlayer(bot, gameState) {
                 // Only attack if the player's game is loaded
                 if (typeof game === 'undefined' || !game.planets) return;
@@ -9325,6 +9357,30 @@
                 if (game.techBonuses && game.techBonuses.planetDefense) {
                     defense *= (1 + game.techBonuses.planetDefense / 100);
                 }
+
+                // Auto-defend: add power from any idle fleets or ships assigned to defend this planet
+                let autoDefendPower = 0;
+                if (typeof game !== 'undefined' && game.fleets) {
+                    game.fleets.forEach(fleet => {
+                        if (!fleet || fleet.stacks.length === 0) return;
+                        // Fleet qualifies as idle auto-defender if it has no active assignment
+                        if (!fleet.assignedTarget && !fleet.onMission) {
+                            fleet.stacks.forEach(stack => {
+                                const ship = game.ships[stack.shipType];
+                                if (ship) autoDefendPower += ship.damage * stack.count;
+                            });
+                        }
+                    });
+                }
+                // Also count unassigned individual ships in hangar
+                if (typeof game !== 'undefined' && game.ships) {
+                    Object.values(game.ships).forEach(ship => {
+                        if (ship.count > 0 && !ship.onMission) {
+                            autoDefendPower += ship.damage * ship.count * 0.5; // hangar ships at 50% effectiveness
+                        }
+                    });
+                }
+                defense += autoDefendPower;
 
                 const attackSuccess = attackPower > defense;
 
@@ -10627,7 +10683,7 @@
                 this.updateServerStats();
                 
                 // Monitor server load
-                setInterval(() => this.monitorServerLoad(), 30000);
+                window._monitorServerInterval = setInterval(() => this.monitorServerLoad(), 30000);
                 
                 console.log('✅ Server Ready');
             }
@@ -10946,7 +11002,17 @@ const SHIP_IMAGE_DATA = {
             }
             
             saveDatabase() {
-                localStorage.setItem('stellarCommandDB', JSON.stringify([...this.players]));
+                // Debounced — coalesces rapid successive calls into one write (max once per 2s)
+                if (this._savePending) return;
+                this._savePending = true;
+                setTimeout(() => {
+                    this._savePending = false;
+                    try {
+                        localStorage.setItem('stellarCommandDB', JSON.stringify([...this.players]));
+                    } catch(e) {
+                        console.warn('⚠️ saveDatabase failed:', e.message);
+                    }
+                }, 2000);
             }
             
             createPlayer(username, email, password, race) {
@@ -12673,14 +12739,28 @@ const SHIP_IMAGE_DATA = {
                 clearInterval(this.serverInfoInterval);
                 clearInterval(this.autoSaveInterval);
                 if (this.worldBossHUDInterval) clearInterval(this.worldBossHUDInterval);
+                // Stop boss auto-waves
+                if (this._bossAutoWaveFleets) {
+                    Object.keys(this._bossAutoWaveFleets).forEach(idx => clearInterval(this._bossAutoWaveFleets[idx]));
+                    this._bossAutoWaveFleets = {};
+                }
+                // Clear global intervals (bounties, tempBonus, server monitor)
+                if (window._bountiesInterval) { clearInterval(window._bountiesInterval); window._bountiesInterval = null; }
+                if (window._tempBonusInterval) { clearInterval(window._tempBonusInterval); window._tempBonusInterval = null; }
+                if (window._monitorServerInterval) { clearInterval(window._monitorServerInterval); window._monitorServerInterval = null; }
+                // Stop chat polling
+                if (typeof chatManager !== 'undefined' && chatManager.pollInterval) {
+                    clearInterval(chatManager.pollInterval);
+                    chatManager.pollInterval = null;
+                }
+                // Stop bot activity loops
+                if (typeof botManager !== 'undefined' && botManager && botManager.stopBotActivities) {
+                    botManager.stopBotActivities();
+                }
                 this.stopMapAnimation();
                 if (this._visibilityHandler) {
                     document.removeEventListener('visibilitychange', this._visibilityHandler);
                     this._visibilityHandler = null;
-                }
-                if (this._resizeHandler) {
-                    window.removeEventListener('resize', this._resizeHandler);
-                    this._resizeHandler = null;
                 }
                 if (this._resizeHandler) {
                     window.removeEventListener('resize', this._resizeHandler);
@@ -12774,7 +12854,7 @@ const SHIP_IMAGE_DATA = {
                     });
                 });
                 
-                // Draw distant galaxies/nebula spots
+                // Draw distant galaxies/nebula spots — baked into starFieldCanvas on init/resize
                 if (!this.nebulaeSpots) {
                     this.nebulaeSpots = [];
                     for (let i = 0; i < 15; i++) {
@@ -12786,19 +12866,34 @@ const SHIP_IMAGE_DATA = {
                             intensity: 0.05 + Math.random() * 0.1
                         });
                     }
+                    // Bake nebulae into the offscreen canvas (already built above for stars)
+                    if (this.starFieldCanvas) {
+                        const sCtx = this.starFieldCanvas.getContext('2d');
+                        this.nebulaeSpots.forEach(spot => {
+                            const g = sCtx.createRadialGradient(spot.x, spot.y, 0, spot.x, spot.y, spot.size);
+                            g.addColorStop(0, spot.color + spot.intensity + ')');
+                            g.addColorStop(0.5, spot.color + (spot.intensity * 0.5) + ')');
+                            g.addColorStop(1, spot.color + '0)');
+                            sCtx.fillStyle = g;
+                            sCtx.fillRect(spot.x - spot.size, spot.y - spot.size, spot.size * 2, spot.size * 2);
+                        });
+                    }
                 }
-                
+
+                // Nebulae are already baked into starFieldCanvas — parallax shift via lightweight translate only
                 this.nebulaeSpots.forEach(spot => {
-                    const x = (spot.x + this.mapPan.x * 0.5) % canvas.width;
-                    const y = (spot.y + this.mapPan.y * 0.5) % canvas.height;
-                    
-                    const gradient = ctx.createRadialGradient(x, y, 0, x, y, spot.size);
-                    gradient.addColorStop(0, spot.color + spot.intensity + ')');
-                    gradient.addColorStop(0.5, spot.color + (spot.intensity * 0.5) + ')');
-                    gradient.addColorStop(1, spot.color + '0)');
-                    
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(x - spot.size, y - spot.size, spot.size * 2, spot.size * 2);
+                    const dx = (this.mapPan.x * 0.5) % canvas.width;
+                    const dy = (this.mapPan.y * 0.5) % canvas.height;
+                    // Subtle pan: just tint position — no gradient allocation per frame
+                    const x = (spot.x + dx + canvas.width) % canvas.width;
+                    const y = (spot.y + dy + canvas.height) % canvas.height;
+                    // Only re-draw as a simple circle if it has moved far from baked position (parallax effect)
+                    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+                        ctx.fillStyle = spot.color + (spot.intensity * 0.6) + ')';
+                        ctx.beginPath();
+                        ctx.arc(x, y, spot.size * 0.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 });
                 
                 // Draw grid
@@ -12858,7 +12953,21 @@ const SHIP_IMAGE_DATA = {
                     
                     // Owner indicator
                     if (planet.owner) {
-                        ctx.fillStyle = '#00ff88';
+                        // Viral Race: draw red translucent lens over claimed planets
+                        if (planet.owner === this.selectedRace?.name && this.selectedRace?.name === 'The Viral Race') {
+                            const viralGlow = ctx.createRadialGradient(x, y, 0, x, y, 14);
+                            viralGlow.addColorStop(0, 'rgba(180,0,0,0.55)');
+                            viralGlow.addColorStop(0.6, 'rgba(139,0,0,0.28)');
+                            viralGlow.addColorStop(1, 'rgba(80,0,0,0)');
+                            ctx.fillStyle = viralGlow;
+                            ctx.beginPath();
+                            ctx.arc(x, y, 14, 0, Math.PI * 2);
+                            ctx.fill();
+                            // Red ownership dot
+                            ctx.fillStyle = '#cc0000';
+                        } else {
+                            ctx.fillStyle = '#00ff88';
+                        }
                         ctx.beginPath();
                         ctx.arc(x, y - 15, 3, 0, Math.PI * 2);
                         ctx.fill();
@@ -13225,6 +13334,8 @@ const SHIP_IMAGE_DATA = {
                     html += ownedClusters.map((cluster, index) => {
                         const tierColors = { 1: '#4a9eff', 2: '#9d4aff', 3: '#ff4a9d', 4: '#ffaa4a', 5: '#ffd700' };
                         const color = tierColors[cluster.tier];
+                        const isViral = this.selectedRace && this.selectedRace.name === 'The Viral Race';
+                        const viralStyle = isViral ? 'box-shadow: 0 0 16px rgba(139,0,0,0.45); background: linear-gradient(135deg, rgba(60,0,0,0.55), var(--bg-tertiary));' : '';
                         
                         // Calculate total resources from all planets in cluster
                         const totalMetal = cluster.planetCount * 3000; // Estimate
@@ -13236,7 +13347,7 @@ const SHIP_IMAGE_DATA = {
                             <div onclick="window.game.selectClusterForBuilding(${index})"
                                  onmouseenter="game.showClusterImageModal()"
                                  onmouseleave="game.hideClusterImageModal()"
-                                 style="margin-bottom: 8px; padding: 10px; background: var(--bg-tertiary); border: 2px solid ${color}; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
+                                 style="margin-bottom: 8px; padding: 10px; background: var(--bg-tertiary); border: 2px solid ${color}; border-radius: 6px; cursor: pointer; transition: all 0.2s; ${viralStyle}">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                     <div style="font-weight: 700; font-size: 12px; color: ${color};">
                                         ${'⭐'.repeat(cluster.tier)} '+cluster.name+'
@@ -13300,65 +13411,159 @@ const SHIP_IMAGE_DATA = {
             
             renderEnemyPlanets() {
                 const list = document.getElementById('enemyPlanetList');
-                const enemyPlanets = this.planets.filter(p => p.owner && p.owner !== this.selectedRace.name).sort((a, b) => a.name.localeCompare(b.name));
-                // NPC clusters: clusters not owned by the player (owner is set to an NPC name or undefined-but-defended)
-                const enemyClusters = this.clusters.filter(c => c.owner && c.owner !== this.selectedRace.name && c.owner !== (this.playerData?.username));
+                if (!list) return;
 
-                if (enemyPlanets.length === 0 && enemyClusters.length === 0) {
-                    list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No enemy planets or clusters found</div>';
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+
+                // Group enemy planets by owner
+                const byOwner = {};
+                this.planets.filter(p => p.owner && p.owner !== myRace).forEach(p => {
+                    const key = p.owner;
+                    if (!byOwner[key]) byOwner[key] = { name: key, planets: [], isNPC: true, difficulty: null, race: p.owner, powerRating: 0 };
+                    byOwner[key].planets.push(p);
+                });
+
+                // Enrich with bot data
+                if (typeof botManager !== 'undefined' && botManager.bots) {
+                    botManager.bots.forEach(bot => {
+                        if (byOwner[bot.username]) {
+                            byOwner[bot.username].difficulty  = bot.difficulty;
+                            byOwner[bot.username].race        = bot.race;
+                            const mult = { 'Easy':0.5,'Medium':1.0,'Hard':1.5,'Elite':2.0,'Legendary':3.0 }[bot.difficulty] || 1;
+                            byOwner[bot.username].powerRating = Math.floor(
+                                (bot.stats?.shipsBuilt    || 0) * 40  * mult +
+                                (bot.stats?.planetsColonized || 0) * 200 * mult +
+                                (bot.stats?.battlesWon    || 0) * 80  * mult
+                            );
+                        }
+                    });
+                }
+
+                const enemyClusters = this.clusters.filter(c => c.owner && c.owner !== myRace && c.owner !== myUser);
+                const owners = Object.values(byOwner).sort((a, b) => b.planets.length - a.planets.length);
+
+                if (owners.length === 0 && enemyClusters.length === 0) {
+                    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-secondary);">
+                        <div style="font-size:32px;margin-bottom:12px;">\ud83d\udd4a\ufe0f</div>
+                        <div>No enemy targets detected.</div>
+                        <div style="font-size:12px;margin-top:6px;color:#555;">Expand your empire to encounter rival factions.</div>
+                    </div>`;
                     return;
                 }
 
-                const tierColors = { 1: '#4a9eff', 2: '#9d4aff', 3: '#ff4a9d', 4: '#ffaa4a', 5: '#ffd700' };
-
+                const diffColors = {'Easy':'#00ff88','Medium':'#ffaa44','Hard':'#ff9500','Elite':'#ff3366','Legendary':'#ff00ff'};
+                const tierColors = {1:'#4a9eff',2:'#9d4aff',3:'#ff4a9d',4:'#ffaa4a',5:'#ffd700'};
                 let html = '';
 
-                // ── Enemy Clusters ───────────────────────────────────────
+                // ── Enemy Clusters ────────────────────────────────────────
                 if (enemyClusters.length > 0) {
-                    html += `<div style="margin-bottom:12px;padding:8px;background:rgba(255,51,102,0.08);border:1px solid rgba(255,51,102,0.4);border-radius:6px;">
-                        <div style="font-size:11px;font-weight:700;color:#ff3366;margin-bottom:8px;">💀 ENEMY CLUSTERS (${enemyClusters.length})</div>
+                    html += `<div style="margin-bottom:10px;padding:6px 10px;background:rgba(255,51,102,0.08);border:1px solid rgba(255,51,102,0.35);border-radius:6px;">
+                        <span style="font-size:11px;font-weight:700;color:#ff3366;">\ud83d\udc80 ENEMY CLUSTERS (${enemyClusters.length})</span>
                     </div>`;
-
-                    html += enemyClusters.map((cluster, idx) => {
+                    html += enemyClusters.map(cluster => {
                         const color = tierColors[cluster.tier] || '#ff3366';
-                        // +50% power/defense per tier level for NPC clusters
                         const tierBonus = 1 + (cluster.tier * 0.5);
-                        const baseDefense = cluster.defenseRating || (1000 * cluster.tier);
-                        const scaledDefense = Math.floor(baseDefense * tierBonus);
-                        const basePower   = cluster.powerRating  || (500  * cluster.tier);
-                        const scaledPower = Math.floor(basePower * tierBonus);
-                        const clusterIdx  = this.clusters.indexOf(cluster);
-
+                        const scaledDefense = Math.floor((cluster.defenseRating || (1000 * cluster.tier)) * tierBonus);
+                        const clusterIdx = this.clusters.indexOf(cluster);
                         return `<div style="margin-bottom:8px;padding:10px;background:var(--bg-tertiary);border:2px solid ${color};border-radius:6px;">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                                <div style="font-weight:700;font-size:12px;color:${color};">${'⭐'.repeat(cluster.tier)} ${cluster.name}</div>
+                                <div style="font-weight:700;font-size:12px;color:${color};">${'\u2b50'.repeat(cluster.tier)} ${cluster.name}</div>
                                 <div style="font-size:9px;padding:2px 6px;background:rgba(255,51,102,0.15);border-radius:3px;color:#ff3366;">Tier ${cluster.tier}</div>
                             </div>
-                            <div style="font-size:9px;color:var(--text-secondary);margin-bottom:4px;">👤 ${cluster.owner || 'NPC'} · 🌍 ${cluster.planetCount} planets</div>
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:9px;margin-bottom:6px;">
-                                <div style="color:#ff3366;">🛡️ Defense: ${scaledDefense.toLocaleString()}</div>
-                                <div style="color:#ff9500;">⚡ Power: ${scaledPower.toLocaleString()}</div>
-                                <div style="color:#8ba3c7;">📈 Tier Bonus: +${Math.round((tierBonus-1)*100)}%</div>
-                            </div>
-                            <button onclick="event.stopPropagation(); game.launchMultiFleetAttack(game.fleets.map((_,i)=>i).filter(i=>game.fleets[i]?.stacks?.length>0), ${clusterIdx})"
-                                style="width:100%;padding:4px;background:rgba(255,51,102,0.15);border:1px solid #ff3366;border-radius:3px;color:#ff3366;font-size:9px;cursor:pointer;font-weight:700;">
-                                ⚔️ Attack Cluster
+                            <div style="font-size:10px;color:var(--text-secondary);margin-bottom:6px;">\ud83d\udc64 ${cluster.owner || 'NPC'} \u00b7 \ud83c\udf0d ${cluster.planetCount} planets \u00b7 \ud83d\udee1\ufe0f ${scaledDefense.toLocaleString()}</div>
+                            <button onclick="event.stopPropagation();game.launchMultiFleetAttack(game.fleets.map((_,i)=>i).filter(i=>game.fleets[i]?.stacks?.length>0),${clusterIdx})"
+                                style="width:100%;padding:5px;background:rgba(255,51,102,0.15);border:1px solid #ff3366;border-radius:3px;color:#ff3366;font-size:10px;cursor:pointer;font-weight:700;">
+                                \u2694\ufe0f Attack Cluster
                             </button>
                         </div>`;
                     }).join('');
                 }
 
-                // ── Enemy Planets ─────────────────────────────────────────
-                if (enemyPlanets.length > 0) {
-                    if (enemyClusters.length > 0) {
-                        html += `<div style="margin:10px 0 8px;font-size:10px;color:#ff3366;letter-spacing:1px;font-weight:700;">ENEMY PLANETS (${enemyPlanets.length})</div>`;
-                    }
-                    html += enemyPlanets.map(planet => this.renderPlanetCard(planet, 'enemy')).join('');
+                // ── Enemy Targets by owner ─────────────────────────────────
+                if (owners.length > 0) {
+                    html += `<div style="margin-bottom:10px;margin-top:${enemyClusters.length > 0 ? '12px' : '0'};padding:6px 10px;background:rgba(255,136,0,0.08);border:1px solid rgba(255,136,0,0.35);border-radius:6px;">
+                        <span style="font-size:11px;font-weight:700;color:#ff8800;">\ud83c\udfaf ENEMY TARGETS (${owners.length})</span>
+                        <span style="font-size:10px;color:#8ba3c7;margin-left:8px;">Click to expand planets — attack as many times as you like</span>
+                    </div>`;
+
+                    html += owners.map(owner => {
+                        const diffColor = diffColors[owner.difficulty] || '#8ba3c7';
+                        const totalDef = owner.planets.reduce((sum, p) => {
+                            let d = 1000;
+                            if (p.buildings) {
+                                d += (p.buildings['Missile Silo'] || 0) * 500;
+                                d += (p.buildings['Space Station'] || 0) * 1000;
+                            }
+                            return sum + d;
+                        }, 0);
+                        const ownerId = owner.name.replace(/[^a-zA-Z0-9]/g, '_');
+
+                        const planetRows = owner.planets.map(p => {
+                            let pDef = 1000;
+                            if (p.buildings) {
+                                pDef += (p.buildings['Missile Silo'] || 0) * 500;
+                                pDef += (p.buildings['Space Station'] || 0) * 1000;
+                            }
+                            const bc = p.buildings ? Object.values(p.buildings).reduce((s,v)=>s+v, 0) : 0;
+                            return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:rgba(0,0,0,0.25);border-radius:5px;margin-bottom:4px;">
+                                <div style="flex:1;min-width:0;">
+                                    <div style="font-size:11px;font-weight:600;color:#e8f0ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+                                    <div style="font-size:9px;color:#8ba3c7;">${p.type} \u00b7 \ud83d\udee1\ufe0f ${pDef.toLocaleString()}${bc > 0 ? ' \u00b7 \ud83c\udfd7\ufe0f '+bc+' bldgs' : ''}</div>
+                                </div>
+                                <button onclick="event.stopPropagation();game.prepareAttack(${p.id})"
+                                    style="padding:4px 10px;background:rgba(255,136,0,0.15);border:1px solid #ff8800;border-radius:4px;color:#ff8800;font-size:9px;cursor:pointer;font-weight:700;flex-shrink:0;">
+                                    \u2694\ufe0f Attack
+                                </button>
+                            </div>`;
+                        }).join('');
+
+                        const safeOwner = owner.name.replace(/'/g, "\'");
+                        return `<div style="margin-bottom:10px;background:var(--bg-tertiary);border:1px solid rgba(255,136,0,0.3);border-radius:8px;overflow:hidden;">
+                            <div onclick="const d=document.getElementById('target_${ownerId}');d.style.display=d.style.display==='none'?'block':'none';"
+                                style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;background:rgba(255,136,0,0.05);">
+                                <div style="flex:1;min-width:0;">
+                                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap;">
+                                        <span style="font-size:13px;font-weight:700;color:#e8f0ff;">${this.escapeHtml(owner.name)}</span>
+                                        ${owner.isNPC ? '<span style="font-size:9px;padding:1px 6px;background:rgba(255,136,0,0.15);border-radius:3px;color:#ff8800;">\ud83e\udd16 NPC</span>' : '<span style="font-size:9px;padding:1px 6px;background:rgba(138,43,226,0.2);border-radius:3px;color:#a78bfa;">\ud83d\udc64 PLAYER</span>'}
+                                        ${owner.difficulty ? `<span style="font-size:9px;color:${diffColor};font-weight:700;">${owner.difficulty}</span>` : ''}
+                                    </div>
+                                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                                        <span style="font-size:10px;color:#8ba3c7;">\ud83e\ude90 ${owner.planets.length} planets</span>
+                                        <span style="font-size:10px;color:#8ba3c7;">\ud83d\udee1\ufe0f ${totalDef.toLocaleString()} total def</span>
+                                        ${owner.race ? `<span style="font-size:10px;color:#8ba3c7;">${owner.race}</span>` : ''}
+                                        ${owner.powerRating > 0 ? `<span style="font-size:10px;color:#ff9500;">\u26a1${owner.powerRating.toLocaleString()}</span>` : ''}
+                                    </div>
+                                </div>
+                                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+                                    <button onclick="event.stopPropagation();game.attackTargetByName('${safeOwner}')"
+                                        style="padding:5px 12px;background:rgba(255,51,102,0.2);border:1px solid #ff3366;border-radius:5px;color:#ff3366;font-size:10px;cursor:pointer;font-weight:700;white-space:nowrap;">
+                                        \u2694\ufe0f Attack
+                                    </button>
+                                    <span style="font-size:9px;color:#8ba3c7;">\u25bc planets</span>
+                                </div>
+                            </div>
+                            <div id="target_${ownerId}" style="display:none;padding:10px 14px;border-top:1px solid rgba(255,255,255,0.06);">
+                                <div style="font-size:10px;color:#8ba3c7;margin-bottom:8px;">ALL PLANETS \u2014 attack any planet, as many times as you want</div>
+                                ${planetRows}
+                            </div>
+                        </div>`;
+                    }).join('');
                 }
 
                 list.innerHTML = html;
             }
-            
+
+            // Attack any planet owned by a given player/NPC by name
+            attackTargetByName(ownerName) {
+                const planet = this.planets.find(p => p.owner === ownerName);
+                if (planet) {
+                    this.prepareAttack(planet.id);
+                } else {
+                    this.showNotification(`\u26a0\ufe0f ${ownerName} has no claimable planets right now.`);
+                }
+            }
+
             renderPlanetCard(planet, type) {
                 const planetImage = PLANET_IMAGE_DATA[planet.type];
                 const hasBuildings = planet.buildings && Object.values(planet.buildings).some(level => level > 0);
@@ -13410,12 +13615,14 @@ const SHIP_IMAGE_DATA = {
                     </button>`;
                 }
                 
+                const isViral = this.selectedRace && this.selectedRace.name === 'The Viral Race';
+                const viralPlanetStyle = (isOwned && isViral) ? 'box-shadow: 0 0 12px rgba(139,0,0,0.5); background: linear-gradient(135deg, rgba(50,0,0,0.6), var(--bg-tertiary));' : '';
                 return `
                     <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}" 
                          onclick="window.game.selectPlanetForBuilding(game.planets.find(p => p.id === ${planet.id})); game.selectPlanet(game.planets.find(p => p.id === ${planet.id}));"
                          onmouseenter="game.showPlanetImageModal('${planet.type}')"
                          onmouseleave="game.hidePlanetImageModal()"
-                         style="animation-delay: ${Math.random() * 0.3}s; ${isOwned ? 'border-color: var(--accent-secondary);' : ''}">
+                         style="animation-delay: ${Math.random() * 0.3}s; ${isOwned ? 'border-color: var(--accent-secondary);' : ''} ${viralPlanetStyle}">
                         ${planetImage ? `<img src="${planetImage}" class="planet-image" style="height: 40px; margin-bottom: 4px;">` : ''}
                         <div class="planet-name" style="font-size: 11px;">${planet.name}</div>
                         <div class="planet-type" style="font-size: 9px;">${planet.type}</div>
@@ -13875,17 +14082,37 @@ const SHIP_IMAGE_DATA = {
                 // Close modal
                 document.querySelectorAll('div[style*="z-index: 10001"]').forEach(m => m.remove());
                 window.selectedAttackFleetIndex = null; // Clear selection
+
+                // Mark fleet/ships as unavailable (on mission) while traveling
+                if (usingFleet && selectedFleetIndex !== undefined && selectedFleetIndex !== null) {
+                    const fl = this.fleets[selectedFleetIndex];
+                    if (fl) fl.onMission = true;
+                } else {
+                    Object.keys(attackForce).forEach(shipName => {
+                        if (this.ships[shipName]) this.ships[shipName].onMission = true;
+                    });
+                }
                 
                 // Show travel notification
-                this.showNotification(`🚀 ${usingFleet ? 'Fleet' : 'Ships'} traveling to ${target.name}... (${travelTime}s)`);
+                this.showNotification(`🚀 ${usingFleet ? 'Fleet' : 'Ships'} traveling to ${target.name}... (${travelTime}s) — UNAVAILABLE until return`);
                 
                 // Travel timer
+                const missionFleetIndex = usingFleet ? selectedFleetIndex : null;
+                const missionShips = usingFleet ? null : Object.keys(attackForce);
                 setTimeout(() => {
-                    this.resolveAttack(target, attackForce, totalPower);
+                    this.resolveAttack(target, attackForce, totalPower, missionFleetIndex, missionShips);
                 }, travelTime * 1000);
             }
             
-            resolveAttack(target, attackForce, attackPower) {
+            resolveAttack(target, attackForce, attackPower, missionFleetIndex, missionShips) {
+                // Clear onMission flag — fleet/ships are now back regardless of outcome
+                if (missionFleetIndex !== null && missionFleetIndex !== undefined && this.fleets[missionFleetIndex]) {
+                    this.fleets[missionFleetIndex].onMission = false;
+                }
+                if (missionShips) {
+                    missionShips.forEach(sn => { if (this.ships[sn]) this.ships[sn].onMission = false; });
+                }
+
                 // Check for random space event (1% chance) - happens during travel to target
                 if (this.checkSpaceEvent('attack', attackForce)) {
                     // Catastrophic event occurred - fleet destroyed during travel
@@ -13907,36 +14134,58 @@ const SHIP_IMAGE_DATA = {
                 }
                 
                 const isVictory = attackPower > defense;
-                
-                // Show battle simulation
-                this.showBattleSimulation(target, attackForce, attackPower, defense, isVictory);
+
+                // ── Compute per-ship losses for the After-Action Report ──
+                const attackerLosses    = {};
+                const defenderDestroyed = {};
+                const lossRate = isVictory ? 0.20 : 0.50;
+
+                // Attacker losses — based on outcome percentage
+                Object.entries(attackForce).forEach(([shipName, quantity]) => {
+                    const losses = Math.ceil(quantity * lossRate);
+                    attackerLosses[shipName] = losses;
+                });
+
+                // Defender destroyed — estimate from defense buildings/structures
+                // Simple heuristic: victorious attacker destroys proportional to defense value
+                if (isVictory && target.buildings) {
+                    Object.entries(target.buildings).forEach(([building, level]) => {
+                        if (level > 0) defenderDestroyed[building + ' (structure)'] = level;
+                    });
+                }
+
+                // Build Viral infection results if applicable
+                const infectResults = [];
+                const viralGained   = [];
+
+                // Show battle simulation with full report data
+                const battleReport = { attackerLosses, defenderDestroyed, infectResults, viralGained };
+                this.showBattleSimulation(target, attackForce, attackPower, defense, isVictory, battleReport);
                 
                 this.showNotification(`⚔️ Battle at ${target.name}! Attack: ${attackPower} vs Defense: ${defense}`);
                 
                 // Wait for simulation to complete (30 seconds)
                 setTimeout(() => {
                     if (isVictory) {
-                        // Victory!
+                        // Victory — apply pre-computed losses
                         target.owner = this.selectedRace.name;
                         target.buildings = {};
-                        
-                        // Lose 20% of attacking fleet
-                        Object.entries(attackForce).forEach(([shipName, quantity]) => {
+
+                        Object.entries(attackerLosses).forEach(([shipName, losses]) => {
                             const ship = this.ships[shipName];
-                            const losses = Math.ceil(quantity * 0.2);
-                            ship.count -= losses;
+                            if (ship) ship.count = Math.max(0, ship.count - losses);
                         });
-                        
+
                         this.renderOwnedPlanets();
                         this.renderEnemyPlanets();
                         this.renderShips();
                         this.updateMap();
-                        this.showNotification(`✨ Victory! ${target.name} captured! (Lost 20% of fleet)`);
+                        this.showNotification(`✨ Victory! ${target.name} captured! (Lost ${Object.values(attackerLosses).reduce((s,c)=>s+c,0)} ships)`);
 
                         // Viral Race: attempt infect on enemy defending ships
-                        if (typeof this.isViralRace === 'function' && this.isViralRace() && target.fleets) {
+                        if (this.isViralRace() && target.fleets) {
                             const allRaceShips = Object.values(SHIP_CLASSES).flat();
-                            const viralShips = SHIP_CLASSES['The Viral Race'] || [];
+                            const viralShips   = SHIP_CLASSES['The Viral Race'] || [];
                             let infectCount = 0;
                             viralShips.filter(s => s.infectAbility).forEach(s => { infectCount += (this.ships[s.name]?.count || 0); });
                             target.fleets.forEach(fleet => {
@@ -13944,138 +14193,178 @@ const SHIP_IMAGE_DATA = {
                                     fleet.stacks.forEach(stack => {
                                         if (stack.shipName && stack.count > 0) {
                                             const tmpl = allRaceShips.find(s => s.name === stack.shipName);
-                                            setTimeout(() => this.attemptInfect(stack.shipName, tmpl || { name: stack.shipName }, infectCount), 500);
+                                            this.initInfectData();
+                                            // Run infect and capture result for AAR
+                                            const before = this.capturedShips[stack.shipName] || 0;
+                                            this.attemptInfect(stack.shipName, tmpl || { name: stack.shipName }, infectCount);
+                                            const after  = this.capturedShips[stack.shipName] || 0;
+                                            const gained = after - before;
+                                            infectResults.push({ name: stack.shipName, captured: gained });
+                                            if (after >= 3 && !this.reverseEngineered[stack.shipName]) {
+                                                viralGained.push({ name: stack.shipName, total: after });
+                                            }
                                         }
                                     });
                                 }
                             });
                         }
                     } else {
-                        // Defeat
-                        // Lose 50% of attacking fleet
-                        Object.entries(attackForce).forEach(([shipName, quantity]) => {
+                        // Defeat — apply pre-computed losses
+                        Object.entries(attackerLosses).forEach(([shipName, losses]) => {
                             const ship = this.ships[shipName];
-                            const losses = Math.ceil(quantity * 0.5);
-                            ship.count -= losses;
+                            if (ship) ship.count = Math.max(0, ship.count - losses);
                         });
-                        
+
                         this.renderShips();
-                        this.showNotification(`💀 Defeat! Attack failed! (Lost 50% of fleet)`);
+                        this.showNotification(`💀 Defeat at ${target.name}! Lost ${Object.values(attackerLosses).reduce((s,c)=>s+c,0)} ships.`);
                     }
+                    this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
+                    this.saveGameState();
                 }, 30000); // 30 second battle
             }
             
-            showBattleSimulation(target, attackForce, attackPower, defense, isVictory) {
-                // Create battle modal
+            showBattleSimulation(target, attackForce, attackPower, defense, isVictory, battleReport) {
+                const report = battleReport || {};
+                const attackerLosses    = report.attackerLosses    || {};
+                const defenderDestroyed = report.defenderDestroyed || {};
+                const infectResults     = report.infectResults     || [];
+                const viralGained       = report.viralGained       || [];
+
                 const modal = document.createElement('div');
                 modal.id = 'battleSimulation';
-                modal.style.cssText = `
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(0, 0, 0, 0.95);
-                    z-index: 10002;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: flex-start;
-                    overflow-y: auto;
-                    padding: 40px 20px;
-                `;
-                
-                // Calculate ship counts
-                const totalShips = Object.values(attackForce).reduce((sum, count) => sum + count, 0);
-                
-                modal.innerHTML = `
-                    <div style="width: 90%; max-width: 1200px; text-align: center; position: relative;">
-                        <!-- Close Button -->
-                        <button onclick="document.getElementById('battleSimulation').remove(); clearInterval(window.battleTimerInterval);" 
-                                style="position: absolute; top: -30px; right: 0; width: 50px; height: 50px; background: #ff3366; border: 2px solid #ff4a4a; border-radius: 50%; color: white; font-size: 24px; cursor: pointer; font-weight: 900; z-index: 10003; box-shadow: 0 4px 12px rgba(255, 51, 102, 0.5);">
-                            ✖
-                        </button>
-                        
-                        <!-- Battle Title -->
-                        <div style="font-size: 48px; font-weight: 900; margin-bottom: 20px; color: ${isVictory ? 'var(--accent-secondary)' : 'var(--accent-danger)'}; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 20px ${isVictory ? '#00ff88' : '#ff4a4a'};">
-                            ${isVictory ? '⚔️ VICTORY' : '💀 DEFEAT'}
+                modal.style.cssText = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.97);z-index:10002;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto;padding:40px 20px;`;
+
+                const totalSent   = Object.values(attackForce).reduce((s,c)=>s+c, 0);
+                const totalLost   = Object.values(attackerLosses).reduce((s,c)=>s+c, 0);
+                const totalKilled = Object.values(defenderDestroyed).reduce((s,c)=>s+c, 0);
+                const survived    = totalSent - totalLost;
+                const isViral     = this.isViralRace();
+                const outcomeColor = isVictory ? '#00ff88' : '#ff4a4a';
+                const outcomeLabel = isVictory ? '\u2694\ufe0f VICTORY' : '\ud83d\udc80 DEFEAT';
+
+                const lossRows = Object.entries(attackForce).map(([shipName, sent]) => {
+                    const lost = attackerLosses[shipName] || 0;
+                    const surv = sent - lost;
+                    const ship = this.ships[shipName];
+                    return `<tr>
+                        <td style="padding:5px 10px;color:#e8f0ff;">${(ship && ship.icon) ? ship.icon : '\ud83d\ude80'} ${shipName}</td>
+                        <td style="padding:5px 10px;text-align:center;color:#8ba3c7;">${sent}</td>
+                        <td style="padding:5px 10px;text-align:center;color:#ff4a4a;font-weight:700;">${lost > 0 ? '-'+lost : '\u2014'}</td>
+                        <td style="padding:5px 10px;text-align:center;color:#00ff88;">${surv}</td>
+                    </tr>`;
+                }).join('');
+
+                const killRows = Object.entries(defenderDestroyed).length > 0
+                    ? Object.entries(defenderDestroyed).map(([sn, cnt]) =>
+                        `<tr>
+                            <td style="padding:4px 10px;color:#e8f0ff;">\ud83d\udc80 ${sn}</td>
+                            <td style="padding:4px 10px;text-align:center;color:#ff4a4a;font-weight:700;">${cnt} destroyed</td>
+                        </tr>`).join('')
+                    : `<tr><td colspan="2" style="padding:6px 10px;color:#8ba3c7;font-style:italic;">No confirmed enemy kills tracked</td></tr>`;
+
+                const infectSection = (isViral && (infectResults.length > 0 || viralGained.length > 0)) ? `
+                    <div style="margin-top:20px;padding:14px 16px;background:rgba(139,0,0,0.15);border:1px solid #8b0000;border-radius:8px;">
+                        <div style="font-size:12px;font-weight:700;color:#ff4444;letter-spacing:1px;margin-bottom:10px;">\ud83e\udda0 HIVE CAPTURE RESULTS</div>
+                        ${infectResults.map(r => `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid rgba(139,0,0,0.2);">
+                            <span style="font-size:18px;">\ud83e\udda0</span>
+                            <span style="color:#e8f0ff;flex:1;">${r.name}</span>
+                            <span style="color:${r.captured > 0 ? '#ff4444' : '#8ba3c7'};font-size:12px;font-weight:700;">${r.captured > 0 ? '+'+r.captured+' captured' : 'Resisted infection'}</span>
+                        </div>`).join('')}
+                        ${viralGained.map(g => `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;">
+                            <span style="font-size:18px;">\ud83e\uddec</span>
+                            <span style="color:#e8f0ff;flex:1;">${g.name}</span>
+                            <span style="color:#22aa44;font-size:12px;font-weight:700;">READY TO INTEGRATE (${g.total}/3)</span>
+                        </div>`).join('')}
+                        <div style="margin-top:8px;">
+                            <button onclick="window.game.openInfectPanel()" style="padding:6px 16px;background:rgba(139,0,0,0.3);border:1px solid #8b0000;border-radius:5px;color:#ff4444;cursor:pointer;font-size:12px;font-weight:700;">\ud83e\udda0 Open Hive Capture Log</button>
                         </div>
-                        
-                        <!-- Battle Stats -->
-                        <div style="display: flex; justify-content: center; gap: 40px; margin-bottom: 30px; flex-wrap: wrap;">
-                            <div style="background: rgba(0, 217, 255, 0.1); padding: 20px; border-radius: 12px; border: 2px solid var(--accent-primary);">
-                                <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 8px;">ATTACK POWER</div>
-                                <div style="font-size: 32px; font-weight: 900; color: var(--accent-primary);">${attackPower.toLocaleString()}</div>
-                                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">${totalShips} Ships</div>
-                            </div>
-                            <div style="font-size: 48px; align-self: center;">VS</div>
-                            <div style="background: rgba(255, 74, 74, 0.1); padding: 20px; border-radius: 12px; border: 2px solid #ff4a4a;">
-                                <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 8px;">DEFENSE</div>
-                                <div style="font-size: 32px; font-weight: 900; color: #ff4a4a;">${defense.toLocaleString()}</div>
-                                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">${target.name}</div>
-                            </div>
+                    </div>` : '';
+
+                modal.innerHTML = `<div style="width:90%;max-width:900px;text-align:center;position:relative;">
+                    <button onclick="document.getElementById('battleSimulation').remove();clearInterval(window.battleTimerInterval);"
+                        style="position:absolute;top:-30px;right:0;width:50px;height:50px;background:#ff3366;border:2px solid #ff4a4a;border-radius:50%;color:white;font-size:24px;cursor:pointer;font-weight:900;z-index:10003;">\u2716</button>
+                    <div style="font-size:48px;font-weight:900;margin-bottom:12px;color:${outcomeColor};font-family:'Orbitron',sans-serif;text-shadow:0 0 20px ${outcomeColor};">${outcomeLabel}</div>
+                    <div style="font-size:14px;color:#8ba3c7;margin-bottom:24px;">Battle at <span style="color:#e8f0ff;font-weight:700;">${target.name}</span>${target.owner ? ' &nbsp;\u00b7&nbsp; <span style=\"color:#ff8800;\">Controlled by '+target.owner+'</span>' : ''}</div>
+                    <div style="display:flex;justify-content:center;gap:30px;margin-bottom:24px;flex-wrap:wrap;">
+                        <div style="padding:16px 24px;background:rgba(0,217,255,0.1);border-radius:10px;border:2px solid var(--accent-primary);min-width:140px;">
+                            <div style="font-size:11px;color:#8ba3c7;margin-bottom:6px;">YOUR ATTACK</div>
+                            <div style="font-size:28px;font-weight:900;color:var(--accent-primary);">${attackPower.toLocaleString()}</div>
+                            <div style="font-size:11px;color:#8ba3c7;margin-top:4px;">${totalSent.toLocaleString()} ships</div>
                         </div>
-                        
-                        <!-- Battle Visualization -->
-                        <div id="battleVisualization" style="width: 100%; height: 400px; background: #000; border-radius: 12px; overflow: hidden; position: relative; border: 2px solid ${isVictory ? 'var(--accent-secondary)' : 'var(--accent-danger)'};">
-                            <!-- Battle images will cycle here -->
-                        </div>
-                        
-                        <!-- Fleet Display -->
-                        <div style="margin-top: 20px; padding: 20px; background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border-color);">
-                            <div style="font-weight: 700; margin-bottom: 12px; color: var(--accent-primary);">ATTACKING FLEET</div>
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
-                                ${Object.entries(attackForce).map(([shipName, quantity]) => {
-                                    const ship = this.ships[shipName];
-                                    const imageFilename = SHIP_IMAGES[this.selectedRace.name]?.[shipName];
-                                    return `
-                                        <div style="background: var(--bg-tertiary); padding: 8px 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-color);">
-                                            ${imageFilename ? 
-                                                `<div style="width: 12px; height: 12px; background: var(--accent-secondary); border-radius: 2px;"></div>` :
-                                                `<div style="width: 12px; height: 12px; background: #00ff88; border-radius: 2px;"></div>`
-                                            }
-                                            <span style="font-weight: 600; font-size: 12px;">${ship.icon} ${shipName}</span>
-                                            <span style="color: var(--accent-secondary); font-weight: 700;">×${quantity}</span>
-                                        </div>
-                                    `;
-                                }).join('')}
-                            </div>
-                        </div>
-                        
-                        <!-- Timer & Close Button -->
-                        <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 12px; align-items: center;">
-                            <div id="battleTimer" style="font-size: 18px; color: var(--text-secondary);">
-                                Auto-close in: <span style="color: var(--accent-primary); font-weight: 700;">30s</span>
-                            </div>
-                            <button onclick="document.getElementById('battleSimulation').remove(); clearInterval(window.battleTimerInterval);" 
-                                    style="padding: 12px 32px; background: linear-gradient(135deg, #ff3366, #ff4a4a); border: 2px solid #ff6688; border-radius: 8px; color: white; font-weight: 700; cursor: pointer; font-size: 16px; text-transform: uppercase;">
-                                ✖ Close Battle Report
-                            </button>
+                        <div style="font-size:40px;align-self:center;">VS</div>
+                        <div style="padding:16px 24px;background:rgba(255,74,74,0.1);border-radius:10px;border:2px solid #ff4a4a;min-width:140px;">
+                            <div style="font-size:11px;color:#8ba3c7;margin-bottom:6px;">DEFENSE</div>
+                            <div style="font-size:28px;font-weight:900;color:#ff4a4a;">${defense.toLocaleString()}</div>
+                            <div style="font-size:11px;color:#8ba3c7;margin-top:4px;">${target.name}</div>
                         </div>
                     </div>
-                `;
-                
+                    <div id="battleVisualization" style="width:100%;height:300px;background:#000;border-radius:12px;overflow:hidden;border:2px solid ${outcomeColor};margin-bottom:24px;"></div>
+                    <div style="text-align:left;background:var(--bg-secondary);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:16px;">
+                        <div style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:2px;color:#8ba3c7;margin-bottom:16px;">\ud83d\udccb AFTER-ACTION REPORT</div>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px;">
+                            <div style="padding:10px;background:rgba(0,0,0,0.3);border-radius:6px;text-align:center;">
+                                <div style="font-size:10px;color:#8ba3c7;margin-bottom:4px;">SHIPS SENT</div>
+                                <div style="font-size:20px;font-weight:700;color:#e8f0ff;">${totalSent.toLocaleString()}</div>
+                            </div>
+                            <div style="padding:10px;background:rgba(255,74,74,0.08);border-radius:6px;text-align:center;border:1px solid rgba(255,74,74,0.2);">
+                                <div style="font-size:10px;color:#8ba3c7;margin-bottom:4px;">YOUR LOSSES</div>
+                                <div style="font-size:20px;font-weight:700;color:#ff4a4a;">${totalLost.toLocaleString()}</div>
+                            </div>
+                            <div style="padding:10px;background:rgba(0,255,136,0.06);border-radius:6px;text-align:center;border:1px solid rgba(0,255,136,0.2);">
+                                <div style="font-size:10px;color:#8ba3c7;margin-bottom:4px;">SURVIVED</div>
+                                <div style="font-size:20px;font-weight:700;color:#00ff88;">${survived.toLocaleString()}</div>
+                            </div>
+                            <div style="padding:10px;background:rgba(255,136,0,0.08);border-radius:6px;text-align:center;border:1px solid rgba(255,136,0,0.2);">
+                                <div style="font-size:10px;color:#8ba3c7;margin-bottom:4px;">ENEMY KILLS</div>
+                                <div style="font-size:20px;font-weight:700;color:#ff9500;">${totalKilled.toLocaleString()}</div>
+                            </div>
+                            ${isViral ? `<div style="padding:10px;background:rgba(139,0,0,0.15);border-radius:6px;text-align:center;border:1px solid rgba(139,0,0,0.4);">
+                                <div style="font-size:10px;color:#8ba3c7;margin-bottom:4px;">\ud83e\udda0 CAPTURED</div>
+                                <div style="font-size:20px;font-weight:700;color:#ff4444;">${infectResults.reduce((s,r)=>s+r.captured,0)}</div>
+                            </div>` : ''}
+                        </div>
+                        <div style="margin-bottom:14px;">
+                            <div style="font-size:11px;font-weight:700;color:#8ba3c7;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);padding-bottom:5px;">Your Fleet Breakdown</div>
+                            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                                <thead><tr style="color:#8ba3c7;font-size:10px;">
+                                    <th style="text-align:left;padding:4px 10px;">Ship</th>
+                                    <th style="text-align:center;padding:4px 10px;">Sent</th>
+                                    <th style="text-align:center;padding:4px 10px;">Lost</th>
+                                    <th style="text-align:center;padding:4px 10px;">Survived</th>
+                                </tr></thead>
+                                <tbody>${lossRows}</tbody>
+                            </table>
+                        </div>
+                        <div>
+                            <div style="font-size:11px;font-weight:700;color:#8ba3c7;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);padding-bottom:5px;">Enemy Ships Destroyed</div>
+                            <table style="width:100%;border-collapse:collapse;font-size:12px;"><tbody>${killRows}</tbody></table>
+                        </div>
+                        ${infectSection}
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:10px;align-items:center;">
+                        <div id="battleTimer" style="font-size:16px;color:#8ba3c7;">Auto-close in: <span style="color:var(--accent-primary);font-weight:700;">30s</span></div>
+                        <button onclick="document.getElementById('battleSimulation').remove();clearInterval(window.battleTimerInterval);"
+                            style="padding:12px 32px;background:linear-gradient(135deg,#ff3366,#ff4a4a);border:2px solid #ff6688;border-radius:8px;color:white;font-weight:700;cursor:pointer;font-size:16px;text-transform:uppercase;">
+                            \u2716 Close Report
+                        </button>
+                    </div>
+                </div>`;
+
                 document.body.appendChild(modal);
-                
-                // Animate battle images
                 this.animateBattle(isVictory);
-                
-                // Timer countdown
+
                 let timeLeft = 30;
                 window.battleTimerInterval = setInterval(() => {
                     timeLeft--;
-                    const timerEl = document.getElementById('battleTimer');
-                    if (timerEl) {
-                        timerEl.innerHTML = `Auto-close in: <span style="color: var(--accent-primary); font-weight: 700;">${timeLeft}s</span>`;
-                    }
+                    const el = document.getElementById('battleTimer');
+                    if (el) el.innerHTML = `Auto-close in: <span style="color:var(--accent-primary);font-weight:700;">${timeLeft}s</span>`;
                     if (timeLeft <= 0) {
                         clearInterval(window.battleTimerInterval);
-                        const battleModal = document.getElementById('battleSimulation');
-                        if (battleModal) battleModal.remove();
+                        document.getElementById('battleSimulation')?.remove();
                     }
                 }, 1000);
             }
-            
+
             animateBattle(isVictory) {
                 const viz = document.getElementById('battleVisualization');
                 if (!viz) return;
@@ -15632,77 +15921,25 @@ const SHIP_IMAGE_DATA = {
                 }, 15000); // every 15 seconds
             }
 
+            // Legacy stub — auto-wave system handles all boss attacks now
             attackWorldBoss(fleetIndex) {
-                if (!this.worldBoss.isActive) {
-                    this.showNotification('⚠️ No active World Boss encounter!');
-                    return;
-                }
-                const fleet = this.fleets[fleetIndex];
-                if (!fleet || fleet.stacks.length === 0) {
-                    this.showNotification('⚠️ That fleet has no ships!');
-                    return;
-                }
-
-                // Calculate fleet power (mirrors fleetVsFleet)
-                let power = 0;
-                fleet.stacks.forEach(s => {
-                    const ship = this.ships[s.shipType];
-                    if (ship) power += ship.damage * s.count;
-                });
-                const fb  = this.getFormationBonus(fleetIndex);
-                const lb  = this.getFleetLevelBonuses(fleetIndex);
-                power = Math.floor(power * (fb.damage || 1) * (lb.damage || 1));
-
-                // Apply HeraldSeal +5% if owned
-                if (this.inventory.some(i => i.artifactId === 'heraldSeal')) power = Math.floor(power * 1.05);
-
-                const dmg = Math.floor(power * (0.85 + Math.random() * 0.3));
-
-                // Track participant damage
-                const me = (this.currentPlayer && this.currentPlayer.username) || 'player';
-                this.worldBoss.participants[me] = (this.worldBoss.participants[me] || 0) + dmg;
-                this.worldBoss.totalDmgDealt   += dmg;
-                this.worldBoss.currentHp        = Math.max(0, this.worldBoss.currentHp - dmg);
-
-                // Immediate fleet losses: 3–8% on attack (scales with phase)
-                const atkLossRate = 0.03 + (this.worldBoss.phase - 1) * 0.025 + Math.random() * 0.02;
-                fleet.stacks.forEach(s => {
-                    s.count = Math.max(0, s.count - Math.floor(s.count * atkLossRate));
-                });
-                fleet.stacks = fleet.stacks.filter(s => s.count > 0);
-
-                // XP for participating fleet
-                this.addFleetExperience(fleetIndex, Math.floor(dmg / 100), '');
-
-                // Phase transitions
-                const pct = this.worldBoss.currentHp / this.worldBoss.maxHp;
-                if (pct <= 0.3 && this.worldBoss.phase < 3) {
-                    this.worldBoss.phase = 3;
-                    this.showNotification('🔴 FRACTURE RAGE — Herald enters Phase 3! Counter-strikes intensify!');
-                } else if (pct <= 0.6 && this.worldBoss.phase < 2) {
-                    this.worldBoss.phase = 2;
-                    this.showNotification('🟠 Herald enters Phase 2 — shields shattered! It fights back every 15s!');
-                    this._startBossCounterDamage(); // re-register with current phase
-                }
-
-                if (this.worldBoss.currentHp <= 0) {
-                    this.defeatWorldBoss();
-                    return;
-                }
-
-                this.renderWorldBossHUD();
-                this.showNotification(`⚔️ Dealt ${dmg.toLocaleString()} dmg! Boss HP: ${this.worldBoss.currentHp.toLocaleString()} | Phase ${this.worldBoss.phase}`);
-                this.renderFleetList && this.renderFleetList();
-                this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
-                this.saveGameState();
+                this.toggleBossAutoWave(fleetIndex);
             }
 
             defeatWorldBoss() {
                 clearInterval(this.worldBoss.counterDmgInterval);
+                // Stop all auto-wave intervals
+                if (this._bossAutoWaveFleets) {
+                    Object.keys(this._bossAutoWaveFleets).forEach(idx => clearInterval(this._bossAutoWaveFleets[idx]));
+                    this._bossAutoWaveFleets = {};
+                }
+                this.fleets.forEach(f => { if (f) f._bossEngaged = false; });
                 this.worldBoss.isActive       = false;
                 this.worldBoss.cooldownUntil  = Date.now() + 24 * 60 * 60 * 1000;
                 document.body.classList.remove('world-boss-active');
                 document.getElementById('worldBossHUD')?.remove();
+                // Stop the HUD polling interval now that boss is gone
+                if (this.worldBossHUDInterval) { clearInterval(this.worldBossHUDInterval); this.worldBossHUDInterval = null; }
 
                 // ── Build loot pool ──────────────────────────────────────
                 // All artifacts at 20% drop each, except 'fragment' at 5%
@@ -15814,6 +16051,12 @@ const SHIP_IMAGE_DATA = {
 
             showWorldBossModal() {
                 document.getElementById('worldBossHUD')?.remove();
+                // Clear any existing auto-wave intervals
+                if (this._bossAutoWaveIntervals) {
+                    this._bossAutoWaveIntervals.forEach(id => clearInterval(id));
+                }
+                this._bossAutoWaveIntervals = [];
+
                 const hud = document.createElement('div');
                 hud.id = 'worldBossHUD';
                 hud.style.cssText = `
@@ -15842,8 +16085,10 @@ const SHIP_IMAGE_DATA = {
                         <button onclick="document.getElementById('worldBossHUD').style.display='none'"
                             style="background:transparent;border:1px solid #333;border-radius:4px;color:#8ba3c7;padding:4px 8px;cursor:pointer;font-size:11px;flex-shrink:0;align-self:flex-start;">▲</button>
                     </div>
-                    <div style="font-size:11px;color:#ff8800;margin-bottom:10px;" id="bossPhaseWarning"></div>
-                    <div style="display:flex;flex-wrap:wrap;gap:8px;" id="bossFleetButtons"></div>
+                    <div style="font-size:11px;color:#ff8800;margin-bottom:8px;" id="bossPhaseWarning"></div>
+                    <div id="bossWaveFeed" style="max-height:100px;overflow-y:auto;font-size:11px;color:#8ba3c7;margin-bottom:10px;padding:6px 8px;background:rgba(0,0,0,0.3);border-radius:6px;display:none;"></div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;" id="bossFleetButtons"></div>
+                    <div id="bossRetreatRow" style="display:none;margin-top:10px;"></div>
                 `;
                 document.body.appendChild(hud);
                 this.renderWorldBossHUD();
@@ -15858,7 +16103,7 @@ const SHIP_IMAGE_DATA = {
                 const hpTxt = document.getElementById('bossHpText');
                 if (hpTxt) hpTxt.textContent = `${Math.max(0,this.worldBoss.currentHp).toLocaleString()} / ${this.worldBoss.maxHp.toLocaleString()} HP`;
                 const dmgTxt = document.getElementById('bossDmgText');
-                const me = (this.currentPlayer && this.currentPlayer.username) || 'player';
+                const me = (this.currentPlayer && this.currentPlayer.username) || (this.playerData && this.playerData.username) || 'player';
                 if (dmgTxt) dmgTxt.textContent = `Your damage: ${(this.worldBoss.participants[me] || 0).toLocaleString()}`;
                 const phaseLabel = document.getElementById('bossPhaseLabel');
                 const phaseWarn  = document.getElementById('bossPhaseWarning');
@@ -15870,26 +16115,190 @@ const SHIP_IMAGE_DATA = {
                 if (phaseWarn) {
                     if (this.worldBoss.phase === 2) phaseWarn.textContent = '⚠️ Phase 2: Herald counter-strikes every 15s (−6% fleet per wave)';
                     else if (this.worldBoss.phase === 3) phaseWarn.textContent = '🔴 FRACTURE RAGE: Counter-strikes intensified (−12% fleet per wave)!';
-                    else phaseWarn.textContent = '';
+                    else phaseWarn.textContent = '⚔️ Auto-wave attack active — fleets engage every 15s automatically';
                 }
+
+                // Retreat row — show after phase completion (phase > 1)
+                const retreatRow = document.getElementById('bossRetreatRow');
+                if (retreatRow) {
+                    if (this.worldBoss.phase > 1 && this.worldBoss.currentHp > 0) {
+                        retreatRow.style.display = 'block';
+                        retreatRow.innerHTML = `<button onclick="window.game.retreatFromWorldBoss()"
+                            style="padding:7px 20px;font-size:11px;font-weight:700;
+                            background:rgba(100,100,100,0.15);border:1px solid #666;
+                            border-radius:6px;color:#aaa;cursor:pointer;transition:background 0.2s;"
+                            onmouseover="this.style.background='rgba(200,50,50,0.25)';this.style.borderColor='#ff4444';this.style.color='#ff6666';"
+                            onmouseout="this.style.background='rgba(100,100,100,0.15)';this.style.borderColor='#666';this.style.color='#aaa';">
+                            🏃 Retreat (Phase ${this.worldBoss.phase - 1} complete)
+                        </button>`;
+                    } else {
+                        retreatRow.style.display = 'none';
+                    }
+                }
+
                 const btns = document.getElementById('bossFleetButtons');
                 if (btns) {
-                    btns.innerHTML = this.fleets.length === 0
-                        ? `<div style="font-size:12px;color:#8ba3c7;">Create fleets in the Fleet tab to attack the boss.</div>`
-                        : this.fleets.map((f, i) => {
+                    if (this.fleets.length === 0) {
+                        btns.innerHTML = `<div style="font-size:12px;color:#8ba3c7;">Create fleets in the Fleet tab to engage the boss automatically.</div>`;
+                    } else {
+                        if (!this._bossAutoWaveIntervals) this._bossAutoWaveIntervals = [];
+                        btns.innerHTML = this.fleets.map((f, i) => {
                             const hasShips = f.stacks && f.stacks.some(s => s.count > 0);
-                            return `<button onclick="window.game.attackWorldBoss(${i})"
+                            const isEngaged = f._bossEngaged;
+                            return `<button onclick="window.game.toggleBossAutoWave(${i})"
                                 style="padding:7px 14px;font-size:11px;font-weight:700;
-                                background:${hasShips ? 'rgba(255,51,102,0.15)' : 'transparent'};
-                                border:1px solid ${hasShips ? '#ff3366' : '#444'};
-                                border-radius:6px;color:${hasShips ? '#ff6680' : '#555'};
+                                background:${isEngaged ? 'rgba(0,255,100,0.15)' : (hasShips ? 'rgba(255,51,102,0.15)' : 'transparent')};
+                                border:1px solid ${isEngaged ? '#00ff88' : (hasShips ? '#ff3366' : '#444')};
+                                border-radius:6px;color:${isEngaged ? '#00ff88' : (hasShips ? '#ff6680' : '#555')};
                                 cursor:${hasShips ? 'pointer' : 'not-allowed'};transition:background 0.2s;"
-                                onmouseover="if(${hasShips})this.style.background='rgba(255,51,102,0.28)'"
-                                onmouseout="this.style.background='${hasShips ? 'rgba(255,51,102,0.15)' : 'transparent'}'">
-                                ⚔️ ${f.name || 'Fleet '+(i+1)}
+                                onmouseover="if(${hasShips})this.style.background='${isEngaged ? 'rgba(0,255,100,0.25)' : 'rgba(255,51,102,0.28)'}'"
+                                onmouseout="this.style.background='${isEngaged ? 'rgba(0,255,100,0.15)' : (hasShips ? 'rgba(255,51,102,0.15)' : 'transparent')}'"
+                                title="${isEngaged ? 'Click to disengage' : 'Click to auto-attack every 15s'}">
+                                ${isEngaged ? '🟢 ' : '⚔️ '} ${f.name || 'Fleet '+(i+1)} ${isEngaged ? '(Auto)' : ''}
                             </button>`;
                         }).join('');
+                    }
                 }
+            }
+
+            // Toggle auto-wave for a fleet against the boss
+            toggleBossAutoWave(fleetIndex) {
+                if (!this.worldBoss.isActive) return;
+                const fleet = this.fleets[fleetIndex];
+                if (!fleet || !fleet.stacks.some(s => s.count > 0)) {
+                    this.showNotification('⚠️ That fleet has no ships!');
+                    return;
+                }
+
+                if (!this._bossAutoWaveIntervals) this._bossAutoWaveIntervals = [];
+                if (!this._bossAutoWaveFleets) this._bossAutoWaveFleets = {};
+
+                if (fleet._bossEngaged) {
+                    // Disengage
+                    fleet._bossEngaged = false;
+                    clearInterval(this._bossAutoWaveFleets[fleetIndex]);
+                    delete this._bossAutoWaveFleets[fleetIndex];
+                    this.showNotification(`🛑 ${fleet.name || 'Fleet ' + (fleetIndex + 1)} disengaged from boss`);
+                } else {
+                    // Engage — fire first wave immediately, then every 15s
+                    fleet._bossEngaged = true;
+                    this._executeBossWave(fleetIndex);
+                    this._bossAutoWaveFleets[fleetIndex] = setInterval(() => {
+                        if (!this.worldBoss.isActive || !fleet._bossEngaged) {
+                            clearInterval(this._bossAutoWaveFleets[fleetIndex]);
+                            delete this._bossAutoWaveFleets[fleetIndex];
+                            fleet._bossEngaged = false;
+                            this.renderWorldBossHUD();
+                            return;
+                        }
+                        this._executeBossWave(fleetIndex);
+                    }, 15000);
+                    this.showNotification(`⚔️ ${fleet.name || 'Fleet ' + (fleetIndex + 1)} engaging boss — auto-attacking every 15s`);
+                }
+                this.renderWorldBossHUD();
+            }
+
+            // Execute a single boss attack wave for a fleet
+            _executeBossWave(fleetIndex) {
+                if (!this.worldBoss.isActive) return;
+                const fleet = this.fleets[fleetIndex];
+                if (!fleet || !fleet.stacks.some(s => s.count > 0)) {
+                    fleet._bossEngaged = false;
+                    clearInterval(this._bossAutoWaveFleets && this._bossAutoWaveFleets[fleetIndex]);
+                    this.renderWorldBossHUD();
+                    return;
+                }
+
+                // Calculate fleet power
+                let power = 0;
+                fleet.stacks.forEach(s => {
+                    const ship = this.ships[s.shipType];
+                    if (ship) power += ship.damage * s.count;
+                });
+                const fb = this.getFormationBonus(fleetIndex);
+                const lb = this.getFleetLevelBonuses(fleetIndex);
+                power = Math.floor(power * (fb.damage || 1) * (lb.damage || 1));
+                if (this.inventory.some(i => i.artifactId === 'heraldSeal')) power = Math.floor(power * 1.05);
+
+                const dmg = Math.floor(power * (0.85 + Math.random() * 0.3));
+
+                // Track participant damage
+                const me = (this.currentPlayer && this.currentPlayer.username) || (this.playerData && this.playerData.username) || 'player';
+                this.worldBoss.participants[me] = (this.worldBoss.participants[me] || 0) + dmg;
+                this.worldBoss.totalDmgDealt += dmg;
+                this.worldBoss.currentHp = Math.max(0, this.worldBoss.currentHp - dmg);
+
+                // Fleet losses per wave: 3–8% per wave (scales with phase)
+                const atkLossRate = 0.03 + (this.worldBoss.phase - 1) * 0.025 + Math.random() * 0.02;
+                let totalLost = 0;
+                fleet.stacks.forEach(s => {
+                    const lost = Math.floor(s.count * atkLossRate);
+                    totalLost += lost;
+                    s.count = Math.max(0, s.count - lost);
+                });
+                fleet.stacks = fleet.stacks.filter(s => s.count > 0);
+
+                // XP for participating fleet
+                this.addFleetExperience && this.addFleetExperience(fleetIndex, Math.floor(dmg / 100), '');
+
+                // Log wave to feed
+                const feed = document.getElementById('bossWaveFeed');
+                if (feed) {
+                    feed.style.display = 'block';
+                    const entry = document.createElement('div');
+                    entry.style.cssText = 'padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);';
+                    entry.innerHTML = `<span style="color:#ff6680;">⚔️ Wave</span> — Damage: <span style="color:#ffd700;">${dmg.toLocaleString()}</span> | Ships lost: <span style="color:#ff4444;">${totalLost.toLocaleString()}</span> | Boss HP: <span style="color:#ff8800;">${Math.max(0,this.worldBoss.currentHp).toLocaleString()}</span>`;
+                    feed.prepend(entry);
+                    // Keep last 8 entries
+                    while (feed.children.length > 8) feed.removeChild(feed.lastChild);
+                }
+
+                // Phase transitions
+                const pct = this.worldBoss.currentHp / this.worldBoss.maxHp;
+                const prevPhase = this.worldBoss.phase;
+                if (pct <= 0.3 && this.worldBoss.phase < 3) {
+                    this.worldBoss.phase = 3;
+                    this._startBossCounterDamage();
+                    this.showNotification('🔴 FRACTURE RAGE — Herald enters Phase 3! Counter-strikes intensify!');
+                } else if (pct <= 0.6 && this.worldBoss.phase < 2) {
+                    this.worldBoss.phase = 2;
+                    this._startBossCounterDamage();
+                    this.showNotification('🟠 Herald enters Phase 2 — shields shattered! It fights back every 15s!');
+                }
+
+                if (this.worldBoss.currentHp <= 0) {
+                    // Stop all auto-waves
+                    if (this._bossAutoWaveFleets) {
+                        Object.keys(this._bossAutoWaveFleets).forEach(idx => clearInterval(this._bossAutoWaveFleets[idx]));
+                        this._bossAutoWaveFleets = {};
+                    }
+                    this.fleets.forEach(f => { f._bossEngaged = false; });
+                    this.defeatWorldBoss();
+                    return;
+                }
+
+                this.renderWorldBossHUD();
+                this.renderFleetList && this.renderFleetList();
+                this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
+                this.saveGameState();
+            }
+
+            // Retreat from boss fight — disengage all fleets, return without reward
+            retreatFromWorldBoss() {
+                if (!confirm('Retreat from the Fracture Herald? You will forfeit all rewards and lose ships already committed.')) return;
+                if (this._bossAutoWaveFleets) {
+                    Object.keys(this._bossAutoWaveFleets).forEach(idx => clearInterval(this._bossAutoWaveFleets[idx]));
+                    this._bossAutoWaveFleets = {};
+                }
+                this.fleets.forEach(f => { f._bossEngaged = false; });
+                this.worldBoss.isActive = false;
+                this.worldBoss.cooldownUntil = Date.now() + 60 * 60 * 1000; // 1hr cooldown after retreat
+                if (this.worldBoss.counterDmgInterval) clearInterval(this.worldBoss.counterDmgInterval);
+                if (this.worldBossHUDInterval) { clearInterval(this.worldBossHUDInterval); this.worldBossHUDInterval = null; }
+                document.getElementById('worldBossHUD')?.remove();
+                document.body.classList.remove('world-boss-active');
+                this.showNotification('🏃 Retreated from the Fracture Herald. 1 hour cooldown applied.');
+                this.saveGameState();
             }
 
             // Called when a Void Portal item is used from inventory
@@ -17109,6 +17518,7 @@ const SHIP_IMAGE_DATA = {
                 const miningMultiplier = raceModifiers.mining / 100;
                 const populationMultiplier = raceModifiers.population / 100;
                 const creditsMultiplier = raceModifiers.credits / 100;
+                const foodProductionMultiplier = raceModifiers.foodProduction ? raceModifiers.foodProduction / 100 : 1.0;
                 
                 ownedPlanets.forEach(planet => {
                     // Calculate bonuses from buildings
@@ -17140,7 +17550,7 @@ const SHIP_IMAGE_DATA = {
                     
                     this.resources.metal += Math.floor((planet.resources.metal / 60) * metalBonus * miningMultiplier * globalMetalModifier);
                     this.resources.he3 += Math.floor((planet.resources.he3 / 60) * globalHE3Modifier);
-                    this.resources.food += Math.floor((planet.resources.food / 60) * foodBonus * artifactFoodBonus * globalFoodModifier);
+                    this.resources.food += Math.floor((planet.resources.food / 60) * foodBonus * artifactFoodBonus * globalFoodModifier * foodProductionMultiplier);
                     
                     // NEW POPULATION GROWTH: +1% per minute with cap of 2500 per planet
                     // Apply race population modifier AND artifact population bonus
@@ -20441,13 +20851,15 @@ const SHIP_IMAGE_DATA = {
             }
         }
 
-        // Auto-refresh bounties every 30 seconds
+        // Auto-refresh bounties every 30 seconds (guard against duplicate registration)
+        if (!window._bountiesInterval) {
         window._bountiesInterval = setInterval(() => {
             const panel = document.getElementById('bountiesPanel');
             if (panel && panel.style.display !== 'none') {
                 updateBountiesDisplay();
             }
         }, 30000);
+        }
 
         console.log('✅ Bounties Display UI loaded');
 
@@ -23667,13 +24079,15 @@ window.addEventListener('DOMContentLoaded', () => {
             }).join('');
         }
 
-        // Check for expired bonuses periodically
+        // Check for expired bonuses periodically (guard against duplicate registration)
+        if (!window._tempBonusInterval) {
         window._tempBonusInterval = setInterval(() => {
             if (window.game && window.game.temporaryBonuses && window.game.temporaryBonuses.length > 0) {
                 recalculateTechBonuses();
                 updateActiveBonuses();
             }
         }, 60000); // Check every minute
+        }
 
 
         // ── Craft action ────────────────────────────────────────────────
