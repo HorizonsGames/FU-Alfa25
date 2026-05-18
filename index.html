@@ -9411,9 +9411,6 @@
                     const stolenCredits  = Math.floor((game.resources.credits  / Math.max(playerPlanets.length, 1)) * stealFraction);
                     const stolenMetal    = Math.floor((game.resources.metal    / Math.max(playerPlanets.length, 1)) * stealFraction);
                     const stolenHe3      = Math.floor((game.resources.he3     / Math.max(playerPlanets.length, 1)) * stealFraction);
-                    game.resources.credits  = Math.max(0, game.resources.credits  - stolenCredits);
-                    game.resources.metal    = Math.max(0, game.resources.metal    - stolenMetal);
-                    game.resources.he3      = Math.max(0, game.resources.he3      - stolenHe3);
 
                     // Harder difficulties can actually capture the planet (25% chance on Hard+)
                     const canCapture = ['Hard', 'Elite', 'Legendary'].includes(bot.difficulty) && Math.random() < 0.25;
@@ -9421,15 +9418,50 @@
                         // Remove buildings — planet reverts to enemy-owned
                         target.owner = bot.username;
                         target.buildings = {};
-                        game.showNotification(
-                            `🚨 PLANET LOST! ${bot.username} captured ${target.name}! ` +
-                            `Stolen: ₡${stolenCredits.toLocaleString()} / ⚙️${stolenMetal.toLocaleString()} / ⚡${stolenHe3.toLocaleString()}`
-                        );
+
+                        // Estimate population loss for this planet
+                        const popLoss = Math.floor((game.resources.population / Math.max(playerPlanets.length, 1)) * 0.15);
+                        game.resources.population = Math.max(0, game.resources.population - popLoss);
+                        game.resources.credits  = Math.max(0, game.resources.credits  - stolenCredits);
+                        game.resources.metal    = Math.max(0, game.resources.metal    - stolenMetal);
+                        game.resources.he3      = Math.max(0, game.resources.he3      - stolenHe3);
+                        const stolenFood = Math.floor((game.resources.food / Math.max(playerPlanets.length, 1)) * stealFraction);
+                        game.resources.food = Math.max(0, game.resources.food - stolenFood);
+
+                        game.showDefeatModal({
+                            title: 'PLANET LOST',
+                            subtitle: `${bot.username} (${bot.difficulty}) has captured your planet!`,
+                            planetName: target.name,
+                            planetCaptured: true,
+                            shipsLost: {},
+                            resourcesLost: {
+                                credits: stolenCredits,
+                                metal: stolenMetal,
+                                he3: stolenHe3,
+                                food: stolenFood,
+                                population: popLoss,
+                            },
+                        });
                     } else {
-                        game.showNotification(
-                            `🔴 NPC RAID! ${bot.username} raided ${target.name}! ` +
-                            `Lost: ₡${stolenCredits.toLocaleString()} / ⚙️${stolenMetal.toLocaleString()} / ⚡${stolenHe3.toLocaleString()}`
-                        );
+                        game.resources.credits  = Math.max(0, game.resources.credits  - stolenCredits);
+                        game.resources.metal    = Math.max(0, game.resources.metal    - stolenMetal);
+                        game.resources.he3      = Math.max(0, game.resources.he3      - stolenHe3);
+                        const stolenFood = Math.floor((game.resources.food / Math.max(playerPlanets.length, 1)) * stealFraction);
+                        game.resources.food = Math.max(0, game.resources.food - stolenFood);
+
+                        game.showDefeatModal({
+                            title: 'RAID SUCCESSFUL',
+                            subtitle: `${bot.username} (${bot.difficulty}) raided ${target.name}!`,
+                            planetName: target.name,
+                            planetCaptured: false,
+                            shipsLost: {},
+                            resourcesLost: {
+                                credits: stolenCredits,
+                                metal: stolenMetal,
+                                he3: stolenHe3,
+                                food: stolenFood,
+                            },
+                        });
                     }
 
                     // Refresh UI
@@ -12641,13 +12673,16 @@ const SHIP_IMAGE_DATA = {
 
                     // World Boss HUD live-refresh (every 2s when active)
                     this.worldBossHUDInterval = setInterval(() => {
-                        if (this.worldBoss && this.worldBoss.isActive) {
+                        if (!this.worldBoss || !this.worldBoss.isActive) return;
+                        // Skip re-render if auto-waves are actively running — they update the HUD themselves
+                        const hasActiveWaves = this._bossAutoWaveFleets && Object.keys(this._bossAutoWaveFleets).length > 0;
+                        if (!hasActiveWaves) {
                             this.renderWorldBossHUD();
                         }
-                        // Update header button badge
+                        // Always update header badge
                         const badge = document.getElementById('worldBossBtnBadge');
-                        if (badge) badge.style.display = (this.worldBoss && this.worldBoss.isActive) ? 'block' : 'none';
-                    }, 2000);
+                        if (badge) badge.style.display = 'block';
+                    }, 5000);
                     
                     console.log('✅ All game intervals started successfully');
                 } catch (error) {
@@ -12701,6 +12736,108 @@ const SHIP_IMAGE_DATA = {
                         }
                     };
                     window.addEventListener('resize', this._resizeHandler);
+
+                    // ── Wheel zoom ───────────────────────────────────────────
+                    this._wheelHandler = (e) => {
+                        e.preventDefault();
+                        const delta = e.deltaY || e.detail || (-e.wheelDelta);
+                        const factor = delta > 0 ? 1 / 1.12 : 1.12;
+                        const newZoom = Math.min(Math.max(this.mapZoom * factor, 0.3), 5);
+
+                        // Zoom toward the cursor position
+                        const rect = this.canvas.getBoundingClientRect();
+                        const mx = e.clientX - rect.left;
+                        const my = e.clientY - rect.top;
+                        const cx = this.canvas.width  / 2;
+                        const cy = this.canvas.height / 2;
+
+                        // Adjust pan so the point under the cursor stays fixed
+                        const worldX = (mx - cx) / this.mapZoom - this.mapPan.x;
+                        const worldY = (my - cy) / this.mapZoom - this.mapPan.y;
+                        this.mapZoom = newZoom;
+                        this.mapPan.x = (mx - cx) / this.mapZoom - worldX;
+                        this.mapPan.y = (my - cy) / this.mapZoom - worldY;
+
+                        if (!this.mapAnimating) this.startMapAnimation();
+                    };
+                    this.canvas.addEventListener('wheel', this._wheelHandler, { passive: false });
+
+                    // ── Drag to pan ───────────────────────────────────────────
+                    let _dragging = false;
+                    let _lastX = 0, _lastY = 0;
+
+                    this._mapMouseDown = (e) => {
+                        if (e.button !== 0) return;
+                        _dragging = true;
+                        _lastX = e.clientX;
+                        _lastY = e.clientY;
+                        this.canvas.style.cursor = 'grabbing';
+                    };
+                    this._mapMouseMove = (e) => {
+                        if (!_dragging) return;
+                        const dx = (e.clientX - _lastX) / this.mapZoom;
+                        const dy = (e.clientY - _lastY) / this.mapZoom;
+                        this.mapPan.x += dx;
+                        this.mapPan.y += dy;
+                        _lastX = e.clientX;
+                        _lastY = e.clientY;
+                        if (!this.mapAnimating) this.startMapAnimation();
+                    };
+                    this._mapMouseUp = () => {
+                        _dragging = false;
+                        this.canvas.style.cursor = 'grab';
+                    };
+
+                    // ── Touch pan ─────────────────────────────────────────────
+                    let _lastTouchX = 0, _lastTouchY = 0;
+                    let _lastPinchDist = null;
+
+                    this._mapTouchStart = (e) => {
+                        if (e.touches.length === 1) {
+                            _lastTouchX = e.touches[0].clientX;
+                            _lastTouchY = e.touches[0].clientY;
+                            _lastPinchDist = null;
+                        } else if (e.touches.length === 2) {
+                            _lastPinchDist = Math.hypot(
+                                e.touches[1].clientX - e.touches[0].clientX,
+                                e.touches[1].clientY - e.touches[0].clientY
+                            );
+                        }
+                    };
+                    this._mapTouchMove = (e) => {
+                        e.preventDefault();
+                        if (e.touches.length === 1 && _lastPinchDist === null) {
+                            const dx = (e.touches[0].clientX - _lastTouchX) / this.mapZoom;
+                            const dy = (e.touches[0].clientY - _lastTouchY) / this.mapZoom;
+                            this.mapPan.x += dx;
+                            this.mapPan.y += dy;
+                            _lastTouchX = e.touches[0].clientX;
+                            _lastTouchY = e.touches[0].clientY;
+                            if (!this.mapAnimating) this.startMapAnimation();
+                        } else if (e.touches.length === 2) {
+                            const dist = Math.hypot(
+                                e.touches[1].clientX - e.touches[0].clientX,
+                                e.touches[1].clientY - e.touches[0].clientY
+                            );
+                            if (_lastPinchDist !== null) {
+                                const pinchFactor = dist / _lastPinchDist;
+                                this.mapZoom = Math.min(Math.max(this.mapZoom * pinchFactor, 0.3), 5);
+                                if (!this.mapAnimating) this.startMapAnimation();
+                            }
+                            _lastPinchDist = dist;
+                        }
+                    };
+                    this._mapTouchEnd = (e) => {
+                        if (e.touches.length < 2) _lastPinchDist = null;
+                    };
+
+                    this.canvas.style.cursor = 'grab';
+                    this.canvas.addEventListener('mousedown',  this._mapMouseDown);
+                    document.addEventListener('mousemove', this._mapMouseMove);
+                    document.addEventListener('mouseup',   this._mapMouseUp);
+                    this.canvas.addEventListener('touchstart', this._mapTouchStart, { passive: false });
+                    this.canvas.addEventListener('touchmove',  this._mapTouchMove,  { passive: false });
+                    this.canvas.addEventListener('touchend',   this._mapTouchEnd);
                 } catch (error) {
                     console.error('❌ Error in setupCanvas:', error);
                 }
@@ -12773,6 +12910,20 @@ const SHIP_IMAGE_DATA = {
                 if (this._resizeHandler) {
                     window.removeEventListener('resize', this._resizeHandler);
                     this._resizeHandler = null;
+                }
+                if (this._wheelHandler && this.canvas) {
+                    this.canvas.removeEventListener('wheel', this._wheelHandler);
+                    this._wheelHandler = null;
+                }
+                if (this._mapMouseDown && this.canvas) {
+                    this.canvas.removeEventListener('mousedown', this._mapMouseDown);
+                    document.removeEventListener('mousemove', this._mapMouseMove);
+                    document.removeEventListener('mouseup',   this._mapMouseUp);
+                }
+                if (this._mapTouchStart && this.canvas) {
+                    this.canvas.removeEventListener('touchstart', this._mapTouchStart);
+                    this.canvas.removeEventListener('touchmove',  this._mapTouchMove);
+                    this.canvas.removeEventListener('touchend',   this._mapTouchEnd);
                 }
                 this.starFieldCanvas = null;
                 this.starField = null;
@@ -13323,8 +13474,11 @@ const SHIP_IMAGE_DATA = {
             
             renderOwnedPlanets() {
                 const list = document.getElementById('ownedPlanetList');
-                const ownedPlanets = this.planets.filter(p => p.owner === this.selectedRace.name && !p.inCluster).sort((a, b) => a.name.localeCompare(b.name));
-                const ownedClusters = this.clusters.filter(c => !c.inCluster);
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+                const ownedPlanets  = this.planets.filter(p => p.owner === myRace && !p.inCluster).sort((a, b) => a.name.localeCompare(b.name));
+                // Only show clusters owned by this player (owner set to race name or username)
+                const ownedClusters = this.clusters.filter(c => c.owner === myRace || c.owner === myUser);
                 
                 if (ownedPlanets.length === 0 && ownedClusters.length === 0) {
                     list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No owned planets</div>';
@@ -13345,11 +13499,11 @@ const SHIP_IMAGE_DATA = {
                         const isViral = this.selectedRace && this.selectedRace.name === 'The Viral Race';
                         const viralStyle = isViral ? 'box-shadow: 0 0 16px rgba(139,0,0,0.45); background: linear-gradient(135deg, rgba(60,0,0,0.55), var(--bg-tertiary));' : '';
                         
-                        // Calculate total resources from all planets in cluster
-                        const totalMetal = cluster.planetCount * 3000; // Estimate
-                        const totalHE3 = cluster.planetCount * 1500;
-                        const totalFood = cluster.planetCount * 2000;
-                        const totalPopulation = cluster.planetCount * 300;
+                        // Use real summed resource values stored at cluster creation time
+                        const totalMetal      = cluster.resources?.metal      || 0;
+                        const totalHE3        = cluster.resources?.he3        || 0;
+                        const totalFood       = cluster.resources?.food       || 0;
+                        const totalPopulation = cluster.population             || 0;
                         
                         return `
                             <div onclick="window.game.selectClusterForBuilding(${index})"
@@ -14247,7 +14401,12 @@ const SHIP_IMAGE_DATA = {
                         });
 
                         this.renderShips();
-                        this.showNotification(`💀 Defeat at ${target.name}! Lost ${Object.values(attackerLosses).reduce((s,c)=>s+c,0)} ships.`);
+                        this.showDefeatModal({
+                            title: 'DEFEAT',
+                            subtitle: `Your assault on ${target.name} was repelled.`,
+                            shipsLost: attackerLosses,
+                            resourcesLost: {},
+                        });
                     }
                     this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
                     this.saveGameState();
@@ -16086,10 +16245,8 @@ const SHIP_IMAGE_DATA = {
 
             showWorldBossModal() {
                 document.getElementById('worldBossHUD')?.remove();
-                // Clear any existing auto-wave intervals
-                if (this._bossAutoWaveIntervals) {
-                    this._bossAutoWaveIntervals.forEach(id => clearInterval(id));
-                }
+                // NOTE: do NOT clear _bossAutoWaveFleets here — intervals survive HUD close/reopen
+                // Only reset the old unused _bossAutoWaveIntervals array
                 this._bossAutoWaveIntervals = [];
 
                 const hud = document.createElement('div');
@@ -16219,10 +16376,12 @@ const SHIP_IMAGE_DATA = {
                     fleet._bossEngaged = true;
                     this._executeBossWave(fleetIndex);
                     this._bossAutoWaveFleets[fleetIndex] = setInterval(() => {
-                        if (!this.worldBoss.isActive || !fleet._bossEngaged) {
+                        // Re-fetch fleet fresh each tick — avoids stale closure
+                        const currentFleet = this.fleets[fleetIndex];
+                        if (!this.worldBoss.isActive || !currentFleet || !currentFleet._bossEngaged) {
                             clearInterval(this._bossAutoWaveFleets[fleetIndex]);
                             delete this._bossAutoWaveFleets[fleetIndex];
-                            fleet._bossEngaged = false;
+                            if (currentFleet) currentFleet._bossEngaged = false;
                             this.renderWorldBossHUD();
                             return;
                         }
@@ -16236,10 +16395,14 @@ const SHIP_IMAGE_DATA = {
             // Execute a single boss attack wave for a fleet
             _executeBossWave(fleetIndex) {
                 if (!this.worldBoss.isActive) return;
+                // Always re-fetch fleet fresh — never rely on closure-captured reference
                 const fleet = this.fleets[fleetIndex];
-                if (!fleet || !fleet.stacks.some(s => s.count > 0)) {
-                    fleet._bossEngaged = false;
-                    clearInterval(this._bossAutoWaveFleets && this._bossAutoWaveFleets[fleetIndex]);
+                if (!fleet || !fleet.stacks || !fleet.stacks.some(s => s.count > 0)) {
+                    if (fleet) fleet._bossEngaged = false;
+                    if (this._bossAutoWaveFleets) {
+                        clearInterval(this._bossAutoWaveFleets[fleetIndex]);
+                        delete this._bossAutoWaveFleets[fleetIndex];
+                    }
                     this.renderWorldBossHUD();
                     return;
                 }
@@ -16313,9 +16476,9 @@ const SHIP_IMAGE_DATA = {
                 }
 
                 this.renderWorldBossHUD();
-                this.renderFleetList && this.renderFleetList();
                 this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
-                this.saveGameState();
+                // Save game state safely — Game has no own saveGameState, use auth
+                if (typeof auth !== 'undefined' && auth.saveGameState) auth.saveGameState();
             }
 
             // Retreat from boss fight — disengage all fleets, return without reward
@@ -17397,13 +17560,17 @@ const SHIP_IMAGE_DATA = {
                         return `
                             <div class="cluster-item cluster-tier-${cluster.tier}" style="margin-bottom: 8px;">
                                 <div class="cluster-header">
-                                    <div class="cluster-name" style="color: ${color};">${stars} '+cluster.name+'</div>
+                                    <div class="cluster-name" style="color: ${color};">${stars} ${cluster.name}</div>
                                     <div class="cluster-tier-badge" style="background: rgba(${cluster.tier === 5 ? '255,215,0' : '0,217,255'}, 0.2); color: ${color};">
                                         Tier ${cluster.tier}
                                     </div>
                                 </div>
                                 <div class="cluster-stats">
-                                    <div class="cluster-stat">Total Planets: <strong>${cluster.planetCount}</strong></div>
+                                    <div class="cluster-stat">🌍 Planets: <strong>${cluster.planetCount}</strong></div>
+                                    <div class="cluster-stat">👥 Population: <strong>${(cluster.population || 0).toLocaleString()}</strong></div>
+                                    <div class="cluster-stat">⛏️ Metal: <strong>${(cluster.resources?.metal || 0).toLocaleString()}</strong></div>
+                                    <div class="cluster-stat">⚡ HE3: <strong>${(cluster.resources?.he3 || 0).toLocaleString()}</strong></div>
+                                    <div class="cluster-stat">🌾 Food: <strong>${(cluster.resources?.food || 0).toLocaleString()}</strong></div>
                                     <div class="cluster-stat">Status: <strong style="color: var(--accent-secondary);">Active</strong></div>
                                 </div>
                             </div>
@@ -17424,68 +17591,82 @@ const SHIP_IMAGE_DATA = {
                     4: 'Cosmic Domain',
                     5: 'Universal Sovereignty'
                 };
-                
-                const planetCounts = {
-                    1: 5,
-                    2: 25,
-                    3: 125,
-                    4: 625,
-                    5: 3125
-                };
-                
+
+                const planetCounts = { 1: 5, 2: 25, 3: 125, 4: 625, 5: 3125 };
+
                 let itemsToCluster = [];
-                let totalMetal = 0;
-                let totalHE3 = 0;
-                let totalFood = 0;
-                
+                let totalMetal      = 0;
+                let totalHE3        = 0;
+                let totalFood       = 0;
+                let totalPopulation = 0;
+                let totalPlanetCount = 0;
+
                 if (tier === 1) {
+                    // Cluster 5 owned, unclustered individual planets
                     itemsToCluster = this.planets.filter(p => p.owner === this.selectedRace.name && !p.inCluster).slice(0, 5);
-                    if (itemsToCluster.length < 5) return;
-                    
-                    // Calculate total resources from planets
+                    if (itemsToCluster.length < 5) {
+                        this.showNotification('⚠️ You need at least 5 unclustered owned planets to form a Tier 1 cluster.');
+                        return;
+                    }
+
                     itemsToCluster.forEach(p => {
                         p.inCluster = true;
-                        if (p.resources) {
-                            totalMetal += p.resources.metal || 0;
-                            totalHE3 += p.resources.he3 || 0;
-                            totalFood += p.resources.food || 0;
-                        }
+                        totalMetal      += (p.resources?.metal      || 0);
+                        totalHE3        += (p.resources?.he3        || 0);
+                        totalFood       += (p.resources?.food       || 0);
+                        totalPopulation += (p.population            || 0);
+                        totalPlanetCount++;
                     });
                 } else {
+                    // Cluster 5 lower-tier clusters into a higher-tier cluster
                     const lowerTier = tier - 1;
                     itemsToCluster = this.clusters.filter(c => c.tier === lowerTier && !c.inCluster).slice(0, 5);
-                    if (itemsToCluster.length < 5) return;
-                    
-                    // Calculate total resources from lower-tier clusters
+                    if (itemsToCluster.length < 5) {
+                        this.showNotification(`⚠️ You need at least 5 unclustered Tier ${lowerTier} clusters to form a Tier ${tier} cluster.`);
+                        return;
+                    }
+
+                    // Sum the real resource stats that were stored when each sub-cluster was formed
                     itemsToCluster.forEach(c => {
                         c.inCluster = true;
-                        if (c.resources) {
-                            totalMetal += c.resources.metal || 0;
-                            totalHE3 += c.resources.he3 || 0;
-                            totalFood += c.resources.food || 0;
-                        }
+                        totalMetal      += (c.resources?.metal      || 0);
+                        totalHE3        += (c.resources?.he3        || 0);
+                        totalFood       += (c.resources?.food       || 0);
+                        totalPopulation += (c.population            || 0);
+                        totalPlanetCount += (c.planetCount          || planetCounts[lowerTier]);
                     });
                 }
-                
+
                 const clusterName = `${tierNames[tier]} ${this.clusters.filter(c => c.tier === tier).length + 1}`;
-                
+
                 const newCluster = {
                     id: Date.now(),
                     name: clusterName,
                     tier: tier,
-                    planetCount: planetCounts[tier],
+                    // Use the exact summed planet count (may differ from theoretical max)
+                    planetCount: totalPlanetCount || planetCounts[tier],
                     resources: {
                         metal: totalMetal,
-                        he3: totalHE3,
-                        food: totalFood
+                        he3:   totalHE3,
+                        food:  totalFood
                     },
+                    // Real population summed from constituent planets/clusters
+                    population: totalPopulation,
                     inCluster: false,
-                    createdAt: Date.now()
+                    owner: this.selectedRace.name,
+                    createdAt: Date.now(),
+                    // Store which items were clustered for reference
+                    sourceItems: itemsToCluster.map(i => i.id || i.name)
                 };
-                
+
                 this.clusters.push(newCluster);
                 this.renderClusters();
-                this.showNotification(`✨ Created ${clusterName} (Tier ${tier})!`);
+                this.renderOwnedPlanets();
+                this.updateMap();
+                this.showNotification(
+                    `✨ ${clusterName} (Tier ${tier}) formed from ${totalPlanetCount} planets! ` +
+                    `⛏️${totalMetal.toLocaleString()} ⚡${totalHE3.toLocaleString()} 🌾${totalFood.toLocaleString()} 👥${totalPopulation.toLocaleString()}`
+                );
             }
             
             renderMaintenance() {
@@ -17630,7 +17811,8 @@ const SHIP_IMAGE_DATA = {
                             maxPop = Math.floor(baseMax + cityDomeBonus);
                         }
                         
-                        if (!cluster.population) cluster.population = cluster.planetCount * 100; // Initialize if needed
+                        // Use real summed population if available; only fall back for legacy clusters without stored data
+                        if (!cluster.population) cluster.population = (cluster.resources ? 0 : cluster.planetCount * 100);
                         
                         if (cluster.population < maxPop) {
                             const popGrowth = Math.ceil((cluster.population * 0.01) / 60); // 1% per minute
@@ -18264,7 +18446,73 @@ const SHIP_IMAGE_DATA = {
                 }, 3000);
             }
             
-            // ===== TECHNOLOGY TREE METHODS =====
+            // Persistent defeat modal — stays open until player manually closes it
+            showDefeatModal(opts) {
+                // opts: { title, planetName, shipsLost, resourcesLost, planetCaptured, clusterCaptured }
+                document.getElementById('defeatModal')?.remove();
+
+                const modal = document.createElement('div');
+                modal.id = 'defeatModal';
+                modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:10050;display:flex;align-items:center;justify-content:center;';
+
+                const r = opts.resourcesLost || {};
+                const s = opts.shipsLost || {};
+                const totalShipsLost = Object.values(s).reduce((t, c) => t + c, 0);
+
+                const resourceRows = [
+                    r.credits  > 0 ? `<tr><td style="padding:5px 12px;color:#8ba3c7;">💰 Credits</td><td style="padding:5px 12px;color:#ff4a4a;font-weight:700;text-align:right;">−${r.credits.toLocaleString()}</td></tr>` : '',
+                    r.metal    > 0 ? `<tr><td style="padding:5px 12px;color:#8ba3c7;">⚙️ Metal</td><td style="padding:5px 12px;color:#ff4a4a;font-weight:700;text-align:right;">−${r.metal.toLocaleString()}</td></tr>` : '',
+                    r.food     > 0 ? `<tr><td style="padding:5px 12px;color:#8ba3c7;">🌾 Food</td><td style="padding:5px 12px;color:#ff4a4a;font-weight:700;text-align:right;">−${r.food.toLocaleString()}</td></tr>` : '',
+                    r.he3      > 0 ? `<tr><td style="padding:5px 12px;color:#8ba3c7;">⚡ HE3</td><td style="padding:5px 12px;color:#ff4a4a;font-weight:700;text-align:right;">−${r.he3.toLocaleString()}</td></tr>` : '',
+                    r.population > 0 ? `<tr><td style="padding:5px 12px;color:#8ba3c7;">👥 Population</td><td style="padding:5px 12px;color:#ff4a4a;font-weight:700;text-align:right;">−${r.population.toLocaleString()}</td></tr>` : '',
+                ].filter(Boolean).join('');
+
+                const shipRows = Object.entries(s).map(([name, count]) =>
+                    `<tr><td style="padding:4px 12px;color:#8ba3c7;">🚀 ${name}</td><td style="padding:4px 12px;color:#ff4a4a;font-weight:700;text-align:right;">−${count}</td></tr>`
+                ).join('');
+
+                const territoryLoss = (opts.planetCaptured || opts.clusterCaptured) ? `
+                    <div style="margin-bottom:16px;padding:12px 16px;background:rgba(255,0,0,0.12);border:1px solid rgba(255,50,50,0.5);border-radius:8px;text-align:center;">
+                        <div style="font-size:22px;margin-bottom:6px;">${opts.clusterCaptured ? '🌌' : '🪐'}</div>
+                        <div style="font-size:14px;font-weight:700;color:#ff4a4a;">${opts.clusterCaptured ? 'CLUSTER LOST' : 'PLANET LOST'}</div>
+                        <div style="font-size:13px;color:#e8f0ff;margin-top:4px;"><strong>${opts.planetName}</strong> has been captured by the enemy.</div>
+                        <div style="font-size:11px;color:#8ba3c7;margin-top:4px;">It has been removed from your Planet Management panel.</div>
+                    </div>` : '';
+
+                modal.innerHTML = `
+                    <div style="width:90%;max-width:480px;background:var(--bg-secondary);border:2px solid #ff4a4a;border-radius:14px;padding:28px;box-shadow:0 0 60px rgba(255,74,74,0.3);">
+                        <div style="text-align:center;margin-bottom:20px;">
+                            <div style="font-size:44px;margin-bottom:8px;">💀</div>
+                            <div style="font-family:'Orbitron',sans-serif;font-size:22px;font-weight:900;color:#ff4a4a;text-shadow:0 0 16px rgba(255,74,74,0.6);">
+                                ${opts.title || 'DEFEAT'}
+                            </div>
+                            <div style="font-size:13px;color:#8ba3c7;margin-top:6px;">${opts.subtitle || ''}</div>
+                        </div>
+
+                        ${territoryLoss}
+
+                        ${resourceRows ? `
+                        <div style="margin-bottom:14px;">
+                            <div style="font-size:11px;font-weight:700;color:#8ba3c7;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);padding-bottom:5px;">Resources Lost</div>
+                            <table style="width:100%;border-collapse:collapse;font-size:13px;">${resourceRows}</table>
+                        </div>` : ''}
+
+                        ${shipRows ? `
+                        <div style="margin-bottom:20px;">
+                            <div style="font-size:11px;font-weight:700;color:#8ba3c7;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.07);padding-bottom:5px;">Ships Lost</div>
+                            <table style="width:100%;border-collapse:collapse;font-size:13px;">${shipRows}</table>
+                        </div>` : ''}
+
+                        <button onclick="document.getElementById('defeatModal').remove();"
+                            style="width:100%;padding:13px;background:linear-gradient(135deg,rgba(255,74,74,0.2),rgba(200,0,0,0.3));border:2px solid #ff4a4a;border-radius:8px;color:#ff6666;font-size:15px;font-weight:700;cursor:pointer;font-family:'Orbitron',sans-serif;letter-spacing:1px;transition:background 0.2s;"
+                            onmouseover="this.style.background='rgba(255,74,74,0.35)'"
+                            onmouseout="this.style.background='linear-gradient(135deg,rgba(255,74,74,0.2),rgba(200,0,0,0.3))'">
+                            ACKNOWLEDGED
+                        </button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
             
             openTechTree() {
                 document.getElementById('techTreeModal').style.display = 'block';
