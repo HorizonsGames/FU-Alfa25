@@ -4820,6 +4820,11 @@
                     <span id="missionsBadge" style="display:none; position:absolute; top:-5px; right:-5px; background:#ff9500; color:#000; border-radius:50%; width:16px; height:16px; font-size:10px; font-weight:900; align-items:center; justify-content:center;">!</span>
                 </div>
 
+                <div class="header-button" onclick="if(window.game) window.game.openIntelReports()" title="Intelligence Reports" style="background: linear-gradient(135deg, rgba(0,217,255,0.2), rgba(138,43,226,0.15)); position:relative;">
+                    <div class="header-button-icon">🕵️</div>
+                    <span id="intelBadge" style="display:none; position:absolute; top:-5px; right:-5px; background:#00d9ff; color:#000; border-radius:50%; width:16px; height:16px; font-size:10px; font-weight:900; align-items:center; justify-content:center; line-height:16px;">!</span>
+                </div>
+
                 <!-- Crafting Button -->
                 <div class="header-button" onclick="if(window.craftingManager) window.craftingManager.open()" title="Crafting Workshop" style="background: linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,149,0,0.15)); position:relative;">
                     <div class="header-button-icon">⚗️</div>
@@ -9178,130 +9183,284 @@
             }
             
             updateBotBehavior() {
-                // Initialize local bot game states if not already done
-                if (!this._botGameStates) {
-                    this._botGameStates = new Map();
-                }
-
-                // Require the live player game to be active
+                if (!this._botGameStates) this._botGameStates = new Map();
                 if (typeof game === 'undefined' || !game.planets) return;
 
-                // All bots participate — each rolls against its own activity chance
                 this.bots.forEach(bot => {
-                    const gameState = this._botGameStates.get(bot.username) || this.initializeBotGameState(bot);
-                    this._botGameStates.set(bot.username, gameState);
-
-                    // AI Decision making based on difficulty
-                    const difficultyMultiplier = {
-                        'Easy': 0.3,
-                        'Medium': 0.6,
-                        'Hard': 0.8,
-                        'Elite': 0.95,
-                        'Legendary': 1.0
-                    }[bot.difficulty] || 0.5;
-
-                    // Activity gate — harder bots act more often (Easy ~30%, Legendary ~80%)
-                    const activityChance = 0.15 + (difficultyMultiplier * 0.65);
-                    if (Math.random() > activityChance) return;
-
-                    // 1. Claim available planets
-                    if (Math.random() < (0.4 * difficultyMultiplier)) {
-                        this.botClaimPlanet(bot, gameState);
+                    let gs = this._botGameStates.get(bot.username);
+                    if (!gs) {
+                        gs = this.initializeBotGameState(bot);
+                        this._botGameStates.set(bot.username, gs);
                     }
 
-                    // 2. Build ships if have resources
-                    if (Math.random() < (0.5 * difficultyMultiplier)) {
-                        this.botBuildShips(bot, gameState);
-                    }
+                    const dm = { 'Easy':0.3, 'Medium':0.6, 'Hard':0.8, 'Elite':0.95, 'Legendary':1.0 }[bot.difficulty] || 0.5;
+                    const actChance = 0.15 + dm * 0.65;
+                    if (Math.random() > actChance) return;
 
-                    // 3. Create clusters when have 5+ planets
-                    if (Math.random() < (0.3 * difficultyMultiplier)) {
-                        this.botCreateCluster(bot, gameState);
-                    }
+                    // ── 1. Sync owned planets from game world ─────────────────
+                    this._syncBotPlanets(bot, gs);
 
-                    // 4. Attack the live player — always attempted when active
-                    // Higher difficulty = higher base attack chance
-                    const attackChance = 0.35 + (difficultyMultiplier * 0.55);
-                    if (Math.random() < attackChance) {
-                        this.botAttackPlayer(bot, gameState);
-                    }
+                    // ── 2. Generate resources from owned planets ───────────────
+                    this._botGenerateResources(bot, gs, dm);
+
+                    // ── 3. Build / upgrade buildings on planets ────────────────
+                    if (Math.random() < 0.55 * dm) this._botBuildBuildings(bot, gs, dm);
+
+                    // ── 4. Build ships ─────────────────────────────────────────
+                    if (Math.random() < 0.65 * dm) this.botBuildShips(bot, gs, dm);
+
+                    // ── 5. Form defensive fleets on each owned planet ──────────
+                    this._botAssignDefenders(bot, gs);
+
+                    // ── 6. Research (simulate) ─────────────────────────────────
+                    if (Math.random() < 0.2 * dm) this._botSimulateResearch(bot, gs, dm);
+
+                    // ── 7. Claim new unclaimed planets ─────────────────────────
+                    if (Math.random() < 0.4 * dm) this.botClaimPlanet(bot, gs);
+
+                    // ── 8. Create clusters ─────────────────────────────────────
+                    if (Math.random() < 0.25 * dm) this.botCreateCluster(bot, gs);
+
+                    // ── 9. Attack player ───────────────────────────────────────
+                    const atkChance = 0.3 + dm * 0.55;
+                    if (Math.random() < atkChance) this.botAttackPlayer(bot, gs);
                 });
             }
-            
-            initializeBotGameState(bot) {
-                return {
-                    resources: { ...bot.resources },
-                    planets: [],
-                    ships: {},
-                    clusters: [],
-                    researchQueue: [],
-                    inventory: []
-                };
+
+            // Sync bot's planet list with game.planets (picks up captures / losses)
+            _syncBotPlanets(bot, gs) {
+                // Pull all game.planets actually owned by this bot
+                const worldPlanets = game.planets.filter(p => p.owner === bot.username);
+                worldPlanets.forEach(p => {
+                    if (!p.buildings)  p.buildings  = {};
+                    if (!p.fleets)     p.fleets     = [];
+                    if (!p.population) p.population = Math.floor(1000 + Math.random() * 5000);
+                });
+                gs.worldPlanets = worldPlanets; // live references into game.planets
+                if (!gs.ships) gs.ships = {};
             }
-            
-            botClaimPlanet(bot, gameState) {
-                // Simulate claiming unclaimed planets
-                if (Math.random() < 0.3) {
-                    const planetCount = gameState.planets.length || 0;
-                    gameState.planets.push({
-                        id: Date.now() + Math.random(),
-                        name: `${bot.race} Outpost ${planetCount + 1}`,
-                        owner: bot.username,
-                        type: ['Desert', 'Ocean', 'Ice', 'Lava', 'Gas'][Math.floor(Math.random() * 5)],
-                        resources: {
-                            metal: Math.floor(2000 + Math.random() * 2000),
-                            he3: Math.floor(1000 + Math.random() * 1000),
-                            food: Math.floor(1500 + Math.random() * 1500)
+
+            // Generate resources each tick based on owned planets + buildings
+            _botGenerateResources(bot, gs, dm) {
+                const planets = gs.worldPlanets || [];
+                if (planets.length === 0) {
+                    // No planets yet — slow passive trickle
+                    gs.resources.credits += Math.floor(500 * dm);
+                    gs.resources.metal   += Math.floor(300 * dm);
+                    gs.resources.he3     += Math.floor(150 * dm);
+                    gs.resources.food    += Math.floor(200 * dm);
+                    return;
+                }
+                planets.forEach(p => {
+                    const mineLevel   = p.buildings['Mining Complex']  || 0;
+                    const farmLevel   = p.buildings['Hydroponic Farm']  || 0;
+                    const creditLevel = p.buildings['Trade Hub']        || 0;
+                    const he3Level    = p.buildings['HE3 Extractor']    || 0;
+
+                    gs.resources.metal   += Math.floor(((p.resources?.metal || 2000) / 60) * (1 + mineLevel   * 0.2) * dm);
+                    gs.resources.he3     += Math.floor(((p.resources?.he3   || 1000) / 60) * (1 + he3Level    * 0.2) * dm);
+                    gs.resources.food    += Math.floor(((p.resources?.food  || 1500) / 60) * (1 + farmLevel   * 0.2) * dm);
+                    gs.resources.credits += Math.floor((2000 / 60) * (1 + creditLevel * 0.3) * dm);
+                });
+                // Cap to avoid runaway accumulation
+                const cap = 500000 * ({ 'Easy':1, 'Medium':2, 'Hard':3, 'Elite':5, 'Legendary':8 }[bot.difficulty] || 2);
+                Object.keys(gs.resources).forEach(k => { gs.resources[k] = Math.min(gs.resources[k], cap); });
+            }
+
+            // Build/upgrade buildings on bot-owned planets — mirrors human build priorities
+            _botBuildBuildings(bot, gs, dm) {
+                const planets = gs.worldPlanets || [];
+                if (planets.length === 0) return;
+
+                // Priority order mirrors smart human play
+                const buildPriority = [
+                    // Defense first for hard+ bots
+                    { name: 'Missile Silo',      cost: { credits: 5000,  metal: 2000 }, maxLevel: 10, defense: true },
+                    { name: 'Space Station',     cost: { credits: 15000, metal: 5000 }, maxLevel: 5,  defense: true },
+                    // Economy
+                    { name: 'Mining Complex',    cost: { credits: 3000,  metal: 1000 }, maxLevel: 10, defense: false },
+                    { name: 'Hydroponic Farm',   cost: { credits: 2000,  metal: 500  }, maxLevel: 10, defense: false },
+                    { name: 'Trade Hub',         cost: { credits: 4000,  metal: 1500 }, maxLevel: 8,  defense: false },
+                    { name: 'HE3 Extractor',     cost: { credits: 3500,  metal: 1200 }, maxLevel: 8,  defense: false },
+                    // Population / pop cap
+                    { name: 'City Dome',         cost: { credits: 6000,  metal: 2500 }, maxLevel: 5,  defense: false },
+                    { name: 'Barracks',          cost: { credits: 5000,  metal: 2000 }, maxLevel: 5,  defense: true },
+                    { name: 'Shipyard',          cost: { credits: 8000,  metal: 3000 }, maxLevel: 5,  defense: false },
+                ];
+
+                // Hard+ bots prioritize defense; lower difficulties prioritize economy
+                const defenseFirst = ['Hard','Elite','Legendary'].includes(bot.difficulty);
+
+                const orderedPriority = defenseFirst
+                    ? buildPriority
+                    : [...buildPriority.filter(b => !b.defense), ...buildPriority.filter(b => b.defense)];
+
+                // Try to build on a random owned planet each tick
+                const planet = planets[Math.floor(Math.random() * planets.length)];
+
+                for (const bld of orderedPriority) {
+                    const currentLevel = planet.buildings[bld.name] || 0;
+                    if (currentLevel >= bld.maxLevel) continue;
+
+                    const scaledCost = { credits: bld.cost.credits * (1 + currentLevel * 0.5), metal: bld.cost.metal * (1 + currentLevel * 0.3) };
+                    if (gs.resources.credits >= scaledCost.credits && gs.resources.metal >= scaledCost.metal) {
+                        gs.resources.credits -= scaledCost.credits;
+                        gs.resources.metal   -= scaledCost.metal;
+                        planet.buildings[bld.name] = (planet.buildings[bld.name] || 0) + 1;
+                        break; // one building per tick
+                    }
+                }
+            }
+
+            // Build ships and accumulate fleet strength
+            botBuildShips(bot, gs, dm) {
+                if (dm === undefined) dm = { 'Easy':0.3,'Medium':0.6,'Hard':0.8,'Elite':0.95,'Legendary':1.0 }[bot.difficulty] || 0.5;
+
+                // Ship roster varies by difficulty — harder bots build heavier ships
+                const rosterByDiff = {
+                    'Easy':       ['Fighter', 'Corvette'],
+                    'Medium':     ['Fighter', 'Corvette', 'Frigate'],
+                    'Hard':       ['Corvette', 'Frigate', 'Destroyer', 'Cruiser'],
+                    'Elite':      ['Frigate', 'Destroyer', 'Cruiser', 'Battleship'],
+                    'Legendary':  ['Destroyer', 'Cruiser', 'Battleship'],
+                };
+                const shipCosts = { Fighter:500, Corvette:1200, Frigate:2500, Destroyer:5000, Cruiser:10000, Battleship:20000 };
+                const shipDmg   = { Fighter:50,  Corvette:120,  Frigate:280,  Destroyer:600,  Cruiser:1200,  Battleship:2500 };
+                const roster    = rosterByDiff[bot.difficulty] || ['Fighter','Corvette','Frigate'];
+
+                // Budget: spend up to 40% of current credits on ships
+                let budget = gs.resources.credits * 0.40;
+                let built  = 0;
+                const maxBuildPerTick = 3 + Math.floor(dm * 7); // Easy=3, Legendary=10
+
+                while (budget > 0 && built < maxBuildPerTick) {
+                    // Pick ship type — weight toward heavier ships for hard bots
+                    const pick = roster[Math.min(Math.floor(Math.random() * roster.length * (0.5 + dm * 0.5)), roster.length - 1)];
+                    const cost = shipCosts[pick];
+                    if (budget < cost || gs.resources.credits < cost || gs.resources.metal < cost * 0.3) break;
+
+                    gs.resources.credits -= cost;
+                    gs.resources.metal   -= Math.floor(cost * 0.3);
+                    budget -= cost;
+
+                    if (!gs.ships[pick]) gs.ships[pick] = { count: 0, damage: shipDmg[pick] };
+                    gs.ships[pick].count++;
+                    bot.stats.shipsBuilt++;
+                    built++;
+                }
+            }
+
+            // Assign ships from gs.ships as defenders on owned planets in game.planets
+            _botAssignDefenders(bot, gs) {
+                const planets = gs.worldPlanets || [];
+                if (planets.length === 0) return;
+
+                // Calculate total ship power available
+                let totalShips = 0;
+                Object.values(gs.ships || {}).forEach(s => { totalShips += s.count || 0; });
+                if (totalShips === 0) return;
+
+                // Split ships across owned planets as defensive garrisons
+                // Each planet gets a fleet proportional to its building defense value
+                const defValues = planets.map(p => {
+                    let d = 1000;
+                    if (p.buildings) {
+                        d += (p.buildings['Missile Silo']  || 0) * 500;
+                        d += (p.buildings['Space Station'] || 0) * 1000;
+                        d += (p.buildings['Barracks']      || 0) * 300;
+                    }
+                    return d;
+                });
+                const totalDefValue = defValues.reduce((s, v) => s + v, 0);
+
+                // Write defensive fleet onto each planet in game.planets
+                planets.forEach((p, i) => {
+                    const share = defValues[i] / totalDefValue; // proportion of fleet this planet gets
+                    const garrison = {};
+                    let assignedShips = 0;
+                    Object.entries(gs.ships || {}).forEach(([type, data]) => {
+                        const count = Math.max(0, Math.floor((data.count || 0) * share));
+                        if (count > 0) {
+                            garrison[type] = { count, damage: data.damage || 100 };
+                            assignedShips += count;
                         }
                     });
-                    
-                    bot.stats.planetsColonized++;
+
+                    // Store garrison on the live planet object so defense calculations can read it
+                    p.botGarrison = garrison;
+                    p.botGarrisonPower = Object.values(garrison).reduce((s, v) => s + (v.damage || 100) * (v.count || 0), 0);
+                });
+            }
+
+            // Simulate research — increases bot difficulty multiplier over time
+            _botSimulateResearch(bot, gs, dm) {
+                if (!gs.research) gs.research = { level: 0, points: 0 };
+                const researchCost = 200 + gs.research.level * 100;
+                if (gs.resources.credits >= researchCost) {
+                    gs.resources.credits -= researchCost;
+                    gs.research.points++;
+                    if (gs.research.points >= 5) {
+                        gs.research.level++;
+                        gs.research.points = 0;
+                        // Boost stats
+                        bot.stats.battlesWon   = Math.max(bot.stats.battlesWon,   gs.research.level * 2);
+                    }
                 }
             }
-            
-            botBuildShips(bot, gameState) {
-                const shipTypes = ['Fighter', 'Corvette', 'Frigate', 'Destroyer', 'Cruiser', 'Battleship'];
-                const shipCosts = { Fighter: 500, Corvette: 1000, Frigate: 2000, Destroyer: 4000, Cruiser: 8000, Battleship: 15000 };
-                
-                const randomShip = shipTypes[Math.floor(Math.random() * shipTypes.length)];
-                const cost = shipCosts[randomShip];
-                
-                if (gameState.resources.credits >= cost && gameState.resources.metal >= cost * 0.5) {
-                    gameState.resources.credits -= cost;
-                    gameState.resources.metal -= cost * 0.5;
-                    
-                    if (!gameState.ships[randomShip]) {
-                        gameState.ships[randomShip] = { count: 0, researched: true };
-                    }
-                    gameState.ships[randomShip].count++;
-                    bot.stats.shipsBuilt++;
-                }
+
+            initializeBotGameState(bot) {
+                const dm = { 'Easy':0.5,'Medium':1.0,'Hard':1.5,'Elite':2.0,'Legendary':3.0 }[bot.difficulty] || 1;
+                return {
+                    resources: {
+                        credits: Math.floor(50000  * dm * (1 + Math.random())),
+                        metal:   Math.floor(25000  * dm * (1 + Math.random())),
+                        he3:     Math.floor(10000  * dm * (1 + Math.random())),
+                        food:    Math.floor(15000  * dm * (1 + Math.random()))
+                    },
+                    planets:      [],
+                    worldPlanets: [],
+                    ships:        {},
+                    clusters:     [],
+                    research:     { level: Math.floor(dm * 2), points: 0 },
+                    inventory:    []
+                };
             }
-            
-            botCreateCluster(bot, gameState) {
-                const ownedPlanets = gameState.planets.filter(p => p.owner === bot.username && !p.inCluster);
-                
-                if (ownedPlanets.length >= 5) {
-                    // Select 5 random planets to cluster
-                    const planetsToCluster = [];
-                    for (let i = 0; i < 5; i++) {
-                        const randomIndex = Math.floor(Math.random() * ownedPlanets.length);
-                        planetsToCluster.push(ownedPlanets.splice(randomIndex, 1)[0]);
-                    }
-                    
-                    // Mark planets as in cluster
-                    planetsToCluster.forEach(p => p.inCluster = true);
-                    
-                    // Create cluster
-                    const clusterCount = gameState.clusters.length || 0;
-                    gameState.clusters.push({
-                        id: Date.now() + Math.random(),
-                        name: `${bot.race} Sector ${clusterCount + 1}`,
-                        tier: 1,
-                        planetCount: 5,
-                        owner: bot.username
-                    });
-                }
+
+            botClaimPlanet(bot, gs) {
+                if (typeof game === 'undefined' || !game.planets) return;
+                const unclaimed = game.planets.filter(p => !p.owner);
+                if (unclaimed.length === 0 || Math.random() > 0.4) return;
+                const planet = unclaimed[Math.floor(Math.random() * unclaimed.length)];
+                planet.owner           = bot.username;
+                planet.buildings       = { 'Mining Complex': 1 };
+                planet.population      = Math.floor(500 + Math.random() * 2000);
+                planet.fleets          = [];
+                planet.botGarrison     = {};
+                planet.botGarrisonPower = 0;
+                bot.stats.planetsColonized++;
+                if (gs.worldPlanets) gs.worldPlanets.push(planet);
+            }
+
+            botCreateCluster(bot, gs) {
+                const ownedPlanets = (gs.worldPlanets || []).filter(p => !p.inCluster);
+                if (ownedPlanets.length < 5) return;
+                const chosen = ownedPlanets.slice(0, 5);
+                let tm = 0, th = 0, tf = 0, tp = 0;
+                chosen.forEach(p => {
+                    p.inCluster = true;
+                    tm += p.resources?.metal || 0;
+                    th += p.resources?.he3   || 0;
+                    tf += p.resources?.food  || 0;
+                    tp += p.population       || 0;
+                });
+                if (!gs.clusters) gs.clusters = [];
+                gs.clusters.push({
+                    id: Date.now() + Math.random(),
+                    name: `${bot.race} Sector ${gs.clusters.length + 1}`,
+                    tier: 1, planetCount: 5, owner: bot.username,
+                    resources: { metal: tm, he3: th, food: tf },
+                    population: tp
+                });
             }
             
             stopBotActivities() {
@@ -9347,23 +9506,22 @@
                 // Calculate player's planetary defense
                 let defense = 1000;
                 if (target.buildings) {
-                    defense += (target.buildings['Missile Silo'] || 0) * 500;
+                    defense += (target.buildings['Missile Silo']  || 0) * 500;
                     defense += (target.buildings['Space Station'] || 0) * 1000;
+                    defense += (target.buildings['Barracks']      || 0) * 300;
                     if (target.buildings['City Dome']) {
                         defense += defense * (target.buildings['City Dome'] * 0.05);
                     }
                 }
-                // Apply player tech bonuses to defense
+                // Apply player tech bonuses
                 if (game.techBonuses && game.techBonuses.planetDefense) {
                     defense *= (1 + game.techBonuses.planetDefense / 100);
                 }
-
-                // Auto-defend: add power from any idle fleets or ships assigned to defend this planet
+                // Add garrison ships from player's fleets (auto-defend)
                 let autoDefendPower = 0;
-                if (typeof game !== 'undefined' && game.fleets) {
+                if (game.fleets) {
                     game.fleets.forEach(fleet => {
-                        if (!fleet || fleet.stacks.length === 0) return;
-                        // Fleet qualifies as idle auto-defender if it has no active assignment
+                        if (!fleet || !fleet.stacks || fleet.stacks.length === 0) return;
                         if (!fleet.assignedTarget && !fleet.onMission) {
                             fleet.stacks.forEach(stack => {
                                 const ship = game.ships[stack.shipType];
@@ -9372,11 +9530,10 @@
                         }
                     });
                 }
-                // Also count unassigned individual ships in hangar
-                if (typeof game !== 'undefined' && game.ships) {
+                if (game.ships) {
                     Object.values(game.ships).forEach(ship => {
                         if (ship.count > 0 && !ship.onMission) {
-                            autoDefendPower += ship.damage * ship.count * 0.5; // hangar ships at 50% effectiveness
+                            autoDefendPower += ship.damage * ship.count * 0.5;
                         }
                     });
                 }
@@ -13965,23 +14122,70 @@ const SHIP_IMAGE_DATA = {
                         clearInterval(searchInterval);
                         delete this.artifactSearches[`cluster_${clusterId}`];
                         
-                        // Better odds for clusters: 1:1000 per tier
-                        const chance = cluster.tier / 1000;
+                        // Tier-based drop rate bonuses: T1=+10%, T2=+20%, T3=+45%, T4=+60%, T5=+75%
+                        const tierDropBonus = { 1: 1.10, 2: 1.20, 3: 1.45, 4: 1.60, 5: 1.75 };
+                        const tierBoost = tierDropBonus[cluster.tier] || 1.0;
+
+                        // Base chance: 1:1000 per tier, then multiplied by tier bonus
+                        const chance = (cluster.tier / 1000) * tierBoost;
                         const found = Math.random() < chance;
-                        
+
                         if (found) {
-                            this.artifacts.push({
-                                id: Date.now(),
-                                clusterName: cluster.name,
-                                foundAt: new Date().toISOString()
-                            });
-                            this.showNotification(`✨ ANCIENT ARTIFACT FOUND in '+cluster.name+'! (${this.artifacts.length}/3 for Ultimate Weapon)`);
-                            
-                            if (this.artifacts.length >= 3) {
-                                this.showNotification(`🔥 You can now research the ULTIMATE WEAPON!`);
+                            // Clusters drop full crafting material pool, scaled by tier bonus
+                            const roll = Math.random();
+                            const craftingBonus = 1.875 * tierBoost; // base crafting bonus × tier multiplier
+                            const globalDropBoost = 1.5 * tierBoost;
+                            let foundArtifact = null;
+
+                            if (roll < ((1 / ARTIFACTS.ancientAudioDisc.rarity) * globalDropBoost)) {
+                                foundArtifact = ARTIFACTS.ancientAudioDisc;
+                            } else if (roll < ((1 / ARTIFACTS.fragment.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.fragment;
+                            } else if (roll < ((1 / ARTIFACTS.ancientPowerSupply.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.ancientPowerSupply;
+                            } else if (roll < ((1 / ARTIFACTS.platinum.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.platinum;
+                            } else if (roll < ((1 / ARTIFACTS.carbon.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.carbon;
+                            } else if (roll < ((1 / ARTIFACTS.webbing.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.webbing;
+                            } else if (roll < ((1 / ARTIFACTS.liquidAluminum.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.liquidAluminum;
+                            } else if (roll < ((1 / ARTIFACTS.dataCrystal.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.dataCrystal;
+                            } else if (roll < ((1 / ARTIFACTS.primordialOoze.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.primordialOoze;
+                            } else if (roll < ((1 / ARTIFACTS.basiliskVenom.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.basiliskVenom;
+                            } else if (roll < ((1 / ARTIFACTS.seaUrchinPoison.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.seaUrchinPoison;
+                            } else if (roll < ((1 / ARTIFACTS.psychedelicMushrooms.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.psychedelicMushrooms;
+                            } else if (typeof ARTIFACTS.deathLily !== 'undefined' && roll < ((1 / ARTIFACTS.deathLily.rarity) * craftingBonus)) {
+                                foundArtifact = ARTIFACTS.deathLily;
+                            }
+
+                            if (foundArtifact) {
+                                // Add to inventory via existing handler
+                                if (typeof this.addArtifactToInventory === 'function') {
+                                    this.addArtifactToInventory(foundArtifact);
+                                } else {
+                                    if (!this.inventory) this.inventory = [];
+                                    this.inventory.push({ artifactId: foundArtifact.id, name: foundArtifact.name, foundAt: new Date().toISOString(), source: cluster.name });
+                                }
+                                const tierLabel = ['','T1','T2','T3','T4','T5'][cluster.tier] || '';
+                                this.showNotification(`✨ [${tierLabel} CLUSTER] Found: ${foundArtifact.name} in ${cluster.name}! (${tierBoost.toFixed(2)}× drop bonus)`);
+                            } else {
+                                // Generic ancient artifact (no specific crafting match)
+                                if (!this.artifacts) this.artifacts = [];
+                                this.artifacts.push({ id: Date.now(), clusterName: cluster.name, foundAt: new Date().toISOString() });
+                                this.showNotification(`✨ ANCIENT ARTIFACT FOUND in ${cluster.name}! (${this.artifacts.length}/3 for Ultimate Weapon)`);
+                                if (this.artifacts.length >= 3) this.showNotification('🔥 You can now research the ULTIMATE WEAPON!');
                             }
                         } else {
-                            this.showNotification(`❌ No artifact found in '+cluster.name+'.`);
+                            // Nothing found this search
+                            const tierLabel = ['','T1','T2','T3','T4','T5'][cluster.tier] || '';
+                            this.showNotification(`❌ [${tierLabel}] No artifact found in ${cluster.name}. Search again to try your luck!`);
                         }
                     }
                 }, 1000);
@@ -14308,16 +14512,18 @@ const SHIP_IMAGE_DATA = {
                 // Calculate defense
                 let defense = 1000;
                 if (target.buildings) {
-                    defense += (target.buildings['Missile Silo'] || 0) * 500;
+                    defense += (target.buildings['Missile Silo']  || 0) * 500;
                     defense += (target.buildings['Space Station'] || 0) * 1000;
-                    
-                    // City Dome adds +5% defense per level
+                    defense += (target.buildings['Barracks']      || 0) * 300;
                     if (target.buildings['City Dome']) {
-                        const cityDomeBonus = defense * (target.buildings['City Dome'] * 0.05);
-                        defense += cityDomeBonus;
+                        defense += defense * (target.buildings['City Dome'] * 0.05);
                     }
                 }
-                
+                // NPC garrison ships actively defend — real ships, real power
+                if (target.botGarrisonPower) {
+                    defense += target.botGarrisonPower;
+                }
+
                 const isVictory = attackPower > defense;
 
                 // ── Compute per-ship losses for the After-Action Report ──
@@ -14331,12 +14537,31 @@ const SHIP_IMAGE_DATA = {
                     attackerLosses[shipName] = losses;
                 });
 
-                // Defender destroyed — estimate from defense buildings/structures
-                // Simple heuristic: victorious attacker destroys proportional to defense value
-                if (isVictory && target.buildings) {
-                    Object.entries(target.buildings).forEach(([building, level]) => {
-                        if (level > 0) defenderDestroyed[building + ' (structure)'] = level;
-                    });
+                // Defender destroyed — garrison ships killed if player wins, degraded if player loses
+                if (isVictory) {
+                    // Clear the garrison — ships are destroyed in the assault
+                    if (target.botGarrison) {
+                        Object.entries(target.botGarrison).forEach(([type, data]) => {
+                            if (data.count > 0) defenderDestroyed[type] = data.count;
+                        });
+                        target.botGarrison = {};
+                        target.botGarrisonPower = 0;
+                    }
+                    if (target.buildings) {
+                        Object.entries(target.buildings).forEach(([building, level]) => {
+                            if (level > 0) defenderDestroyed[building + ' (structure)'] = level;
+                        });
+                    }
+                } else {
+                    // Attacker defeated — garrison takes minor losses too (10-20%)
+                    if (target.botGarrison) {
+                        const garrisonLoss = 0.10 + Math.random() * 0.10;
+                        Object.values(target.botGarrison).forEach(data => {
+                            data.count = Math.max(0, Math.floor(data.count * (1 - garrisonLoss)));
+                        });
+                        target.botGarrisonPower = Object.values(target.botGarrison)
+                            .reduce((s, v) => s + (v.damage || 100) * (v.count || 0), 0);
+                    }
                 }
 
                 // Build Viral infection results if applicable
@@ -14359,6 +14584,13 @@ const SHIP_IMAGE_DATA = {
                         Object.entries(attackerLosses).forEach(([shipName, losses]) => {
                             const ship = this.ships[shipName];
                             if (ship) ship.count = Math.max(0, ship.count - losses);
+                        });
+
+                        // Record to battle history
+                        this._recordBattle({
+                            outcome: 'victory', target: target.name, targetOwner: target.owner || 'Unclaimed',
+                            attackPower, defense, attackForce, attackerLosses, defenderDestroyed,
+                            infectResults, timestamp: Date.now()
                         });
 
                         this.renderOwnedPlanets();
@@ -14398,6 +14630,13 @@ const SHIP_IMAGE_DATA = {
                         Object.entries(attackerLosses).forEach(([shipName, losses]) => {
                             const ship = this.ships[shipName];
                             if (ship) ship.count = Math.max(0, ship.count - losses);
+                        });
+
+                        // Record to battle history
+                        this._recordBattle({
+                            outcome: 'defeat', target: target.name, targetOwner: target.owner || 'Unclaimed',
+                            attackPower, defense, attackForce, attackerLosses, defenderDestroyed: {},
+                            infectResults: [], timestamp: Date.now()
                         });
 
                         this.renderShips();
@@ -16106,9 +16345,9 @@ const SHIP_IMAGE_DATA = {
                     if (fleetsDamaged > 0) {
                         const phaseLabel = this.worldBoss.phase === 3 ? 'FRACTURE RAGE' : 'Phase 2';
                         this.showNotification(`🔴 [${phaseLabel}] Herald counter-strikes! All fleets lose ${(counterRate*100).toFixed(0)}% ships!`);
-                        this.renderFleetList && this.renderFleetList();
-                        this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
-                        this.saveGameState();
+                        try { this.renderFleetList && this.renderFleetList(); } catch(e) {}
+                        try { this.calculatePlayerPowerRating && this.calculatePlayerPowerRating(); } catch(e) {}
+                        try { if (typeof auth !== 'undefined' && auth.saveGameState) auth.saveGameState(); } catch(e) {}
                     }
                 }, 15000); // every 15 seconds
             }
@@ -16122,7 +16361,7 @@ const SHIP_IMAGE_DATA = {
                 clearInterval(this.worldBoss.counterDmgInterval);
                 // Stop all auto-wave intervals
                 if (this._bossAutoWaveFleets) {
-                    Object.keys(this._bossAutoWaveFleets).forEach(idx => clearInterval(this._bossAutoWaveFleets[idx]));
+                    Object.keys(this._bossAutoWaveFleets).forEach(idx => clearTimeout(this._bossAutoWaveFleets[idx]));
                     this._bossAutoWaveFleets = {};
                 }
                 this.fleets.forEach(f => { if (f) f._bossEngaged = false; });
@@ -16355,52 +16594,68 @@ const SHIP_IMAGE_DATA = {
 
             // Toggle auto-wave for a fleet against the boss
             toggleBossAutoWave(fleetIndex) {
-                if (!this.worldBoss.isActive) return;
+                if (!this.worldBoss || !this.worldBoss.isActive) return;
                 const fleet = this.fleets[fleetIndex];
-                if (!fleet || !fleet.stacks.some(s => s.count > 0)) {
+                if (!fleet || !fleet.stacks || !fleet.stacks.some(s => s.count > 0)) {
                     this.showNotification('⚠️ That fleet has no ships!');
                     return;
                 }
 
-                if (!this._bossAutoWaveIntervals) this._bossAutoWaveIntervals = [];
                 if (!this._bossAutoWaveFleets) this._bossAutoWaveFleets = {};
 
                 if (fleet._bossEngaged) {
-                    // Disengage
+                    // Disengage — stop the recursive loop by clearing the flag
                     fleet._bossEngaged = false;
-                    clearInterval(this._bossAutoWaveFleets[fleetIndex]);
-                    delete this._bossAutoWaveFleets[fleetIndex];
-                    this.showNotification(`🛑 ${fleet.name || 'Fleet ' + (fleetIndex + 1)} disengaged from boss`);
+                    if (this._bossAutoWaveFleets[fleetIndex]) {
+                        clearTimeout(this._bossAutoWaveFleets[fleetIndex]);
+                        delete this._bossAutoWaveFleets[fleetIndex];
+                    }
+                    this.showNotification(`🛑 ${fleet.name || 'Fleet ' + (fleetIndex + 1)} disengaged`);
+                    this.renderWorldBossHUD();
                 } else {
-                    // Engage — fire first wave immediately, then every 15s
+                    // Engage — mark fleet and fire first wave immediately
                     fleet._bossEngaged = true;
-                    this._executeBossWave(fleetIndex);
-                    this._bossAutoWaveFleets[fleetIndex] = setInterval(() => {
-                        // Re-fetch fleet fresh each tick — avoids stale closure
-                        const currentFleet = this.fleets[fleetIndex];
-                        if (!this.worldBoss.isActive || !currentFleet || !currentFleet._bossEngaged) {
-                            clearInterval(this._bossAutoWaveFleets[fleetIndex]);
-                            delete this._bossAutoWaveFleets[fleetIndex];
-                            if (currentFleet) currentFleet._bossEngaged = false;
-                            this.renderWorldBossHUD();
-                            return;
-                        }
-                        this._executeBossWave(fleetIndex);
-                    }, 15000);
-                    this.showNotification(`⚔️ ${fleet.name || 'Fleet ' + (fleetIndex + 1)} engaging boss — auto-attacking every 15s`);
+                    this.showNotification(`⚔️ ${fleet.name || 'Fleet ' + (fleetIndex + 1)} engaging — auto-attacking every 15s`);
+                    this._scheduleBossWave(fleetIndex, true);
                 }
-                this.renderWorldBossHUD();
+            }
+
+            // Schedule the next boss wave using recursive setTimeout (immune to DOM rebuilds)
+            _scheduleBossWave(fleetIndex, immediate) {
+                if (!this._bossAutoWaveFleets) this._bossAutoWaveFleets = {};
+                const delay = immediate ? 0 : 15000;
+                if (this._bossAutoWaveFleets[fleetIndex]) {
+                    clearTimeout(this._bossAutoWaveFleets[fleetIndex]);
+                }
+                this._bossAutoWaveFleets[fleetIndex] = setTimeout(() => {
+                    // Guard checks — re-fetch everything fresh
+                    const currentFleet = this.fleets && this.fleets[fleetIndex];
+                    if (!this.worldBoss || !this.worldBoss.isActive ||
+                        !currentFleet || !currentFleet._bossEngaged ||
+                        !currentFleet.stacks || !currentFleet.stacks.some(s => s.count > 0)) {
+                        if (currentFleet) currentFleet._bossEngaged = false;
+                        delete this._bossAutoWaveFleets[fleetIndex];
+                        this.renderWorldBossHUD();
+                        return;
+                    }
+                    // Execute the wave
+                    this._executeBossWave(fleetIndex);
+                    // Schedule next wave only if still engaged after execution
+                    const nextFleet = this.fleets && this.fleets[fleetIndex];
+                    if (this.worldBoss && this.worldBoss.isActive && nextFleet && nextFleet._bossEngaged) {
+                        this._scheduleBossWave(fleetIndex, false);
+                    }
+                }, delay);
             }
 
             // Execute a single boss attack wave for a fleet
             _executeBossWave(fleetIndex) {
-                if (!this.worldBoss.isActive) return;
-                // Always re-fetch fleet fresh — never rely on closure-captured reference
-                const fleet = this.fleets[fleetIndex];
+                if (!this.worldBoss || !this.worldBoss.isActive) return;
+                const fleet = this.fleets && this.fleets[fleetIndex];
                 if (!fleet || !fleet.stacks || !fleet.stacks.some(s => s.count > 0)) {
                     if (fleet) fleet._bossEngaged = false;
                     if (this._bossAutoWaveFleets) {
-                        clearInterval(this._bossAutoWaveFleets[fleetIndex]);
+                        clearTimeout(this._bossAutoWaveFleets[fleetIndex]);
                         delete this._bossAutoWaveFleets[fleetIndex];
                     }
                     this.renderWorldBossHUD();
@@ -16413,20 +16668,24 @@ const SHIP_IMAGE_DATA = {
                     const ship = this.ships[s.shipType];
                     if (ship) power += ship.damage * s.count;
                 });
-                const fb = this.getFormationBonus(fleetIndex);
-                const lb = this.getFleetLevelBonuses(fleetIndex);
-                power = Math.floor(power * (fb.damage || 1) * (lb.damage || 1));
-                if (this.inventory.some(i => i.artifactId === 'heraldSeal')) power = Math.floor(power * 1.05);
+                try {
+                    const fb = this.getFormationBonus(fleetIndex);
+                    const lb = this.getFleetLevelBonuses(fleetIndex);
+                    power = Math.floor(power * (fb.damage || 1) * (lb.damage || 1));
+                } catch(e) {}
+                if (this.inventory && this.inventory.some(i => i.artifactId === 'heraldSeal')) power = Math.floor(power * 1.05);
 
                 const dmg = Math.floor(power * (0.85 + Math.random() * 0.3));
 
                 // Track participant damage
-                const me = (this.currentPlayer && this.currentPlayer.username) || (this.playerData && this.playerData.username) || 'player';
+                const me = (this.currentPlayer && this.currentPlayer.username) ||
+                           (this.playerData && this.playerData.username) || 'player';
+                if (!this.worldBoss.participants) this.worldBoss.participants = {};
                 this.worldBoss.participants[me] = (this.worldBoss.participants[me] || 0) + dmg;
-                this.worldBoss.totalDmgDealt += dmg;
+                this.worldBoss.totalDmgDealt = (this.worldBoss.totalDmgDealt || 0) + dmg;
                 this.worldBoss.currentHp = Math.max(0, this.worldBoss.currentHp - dmg);
 
-                // Fleet losses per wave: 3–8% per wave (scales with phase)
+                // Fleet losses per wave: 3–8% (scales with phase)
                 const atkLossRate = 0.03 + (this.worldBoss.phase - 1) * 0.025 + Math.random() * 0.02;
                 let totalLost = 0;
                 fleet.stacks.forEach(s => {
@@ -16436,49 +16695,50 @@ const SHIP_IMAGE_DATA = {
                 });
                 fleet.stacks = fleet.stacks.filter(s => s.count > 0);
 
-                // XP for participating fleet
-                this.addFleetExperience && this.addFleetExperience(fleetIndex, Math.floor(dmg / 100), '');
+                // XP
+                try { this.addFleetExperience && this.addFleetExperience(fleetIndex, Math.floor(dmg / 100), ''); } catch(e) {}
 
                 // Log wave to feed
-                const feed = document.getElementById('bossWaveFeed');
-                if (feed) {
-                    feed.style.display = 'block';
-                    const entry = document.createElement('div');
-                    entry.style.cssText = 'padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);';
-                    entry.innerHTML = `<span style="color:#ff6680;">⚔️ Wave</span> — Damage: <span style="color:#ffd700;">${dmg.toLocaleString()}</span> | Ships lost: <span style="color:#ff4444;">${totalLost.toLocaleString()}</span> | Boss HP: <span style="color:#ff8800;">${Math.max(0,this.worldBoss.currentHp).toLocaleString()}</span>`;
-                    feed.prepend(entry);
-                    // Keep last 8 entries
-                    while (feed.children.length > 8) feed.removeChild(feed.lastChild);
-                }
+                try {
+                    const feed = document.getElementById('bossWaveFeed');
+                    if (feed) {
+                        feed.style.display = 'block';
+                        const entry = document.createElement('div');
+                        entry.style.cssText = 'padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px;';
+                        entry.innerHTML = `<span style="color:#ff6680;">⚔️ Wave</span> — Dmg: <span style="color:#ffd700;">${dmg.toLocaleString()}</span> | Lost: <span style="color:#ff4444;">${totalLost}</span> | HP: <span style="color:#ff8800;">${this.worldBoss.currentHp.toLocaleString()}</span>`;
+                        feed.prepend(entry);
+                        while (feed.children.length > 8) feed.removeChild(feed.lastChild);
+                    }
+                } catch(e) {}
 
                 // Phase transitions
                 const pct = this.worldBoss.currentHp / this.worldBoss.maxHp;
-                const prevPhase = this.worldBoss.phase;
                 if (pct <= 0.3 && this.worldBoss.phase < 3) {
                     this.worldBoss.phase = 3;
                     this._startBossCounterDamage();
-                    this.showNotification('🔴 FRACTURE RAGE — Herald enters Phase 3! Counter-strikes intensify!');
+                    this.showNotification('🔴 FRACTURE RAGE — Herald enters Phase 3!');
                 } else if (pct <= 0.6 && this.worldBoss.phase < 2) {
                     this.worldBoss.phase = 2;
                     this._startBossCounterDamage();
-                    this.showNotification('🟠 Herald enters Phase 2 — shields shattered! It fights back every 15s!');
+                    this.showNotification('🟠 Herald enters Phase 2 — shields shattered!');
                 }
 
+                // Boss defeated?
                 if (this.worldBoss.currentHp <= 0) {
-                    // Stop all auto-waves
                     if (this._bossAutoWaveFleets) {
-                        Object.keys(this._bossAutoWaveFleets).forEach(idx => clearInterval(this._bossAutoWaveFleets[idx]));
+                        Object.keys(this._bossAutoWaveFleets).forEach(idx => {
+                            clearTimeout(this._bossAutoWaveFleets[idx]);
+                        });
                         this._bossAutoWaveFleets = {};
                     }
-                    this.fleets.forEach(f => { f._bossEngaged = false; });
+                    this.fleets.forEach(f => { if (f) f._bossEngaged = false; });
                     this.defeatWorldBoss();
                     return;
                 }
 
-                this.renderWorldBossHUD();
-                this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
-                // Save game state safely — Game has no own saveGameState, use auth
-                if (typeof auth !== 'undefined' && auth.saveGameState) auth.saveGameState();
+                // Update HUD
+                try { this.renderWorldBossHUD(); } catch(e) {}
+                try { if (typeof auth !== 'undefined' && auth.saveGameState) auth.saveGameState(); } catch(e) {}
             }
 
             // Retreat from boss fight — disengage all fleets, return without reward
@@ -17407,180 +17667,243 @@ const SHIP_IMAGE_DATA = {
             
             renderClusters() {
                 const container = document.getElementById('clusterList');
-                
-                // Count available planets and clusters by tier
-                const availablePlanets = this.planets.filter(p => p.owner === this.selectedRace.name && !p.inCluster);
-                const tier1Clusters = this.clusters.filter(c => c.tier === 1 && !c.inCluster);
-                const tier2Clusters = this.clusters.filter(c => c.tier === 2 && !c.inCluster);
-                const tier3Clusters = this.clusters.filter(c => c.tier === 3 && !c.inCluster);
-                const tier4Clusters = this.clusters.filter(c => c.tier === 4 && !c.inCluster);
-                
-                const canCreateTier1 = availablePlanets.length >= 5;
-                const canCreateTier2 = tier1Clusters.length >= 5;
-                const canCreateTier3 = tier2Clusters.length >= 5;
-                const canCreateTier4 = tier3Clusters.length >= 5;
-                const canCreateTier5 = tier4Clusters.length >= 5;
-                
-                let html = '';
-                
-                // Create Tier 1 Cluster
-                html += `
-                    <div class="cluster-item cluster-tier-1">
-                        <div class="cluster-header">
-                            <div class="cluster-name" style="color: #4a9eff;">⭐ Tier 1 Cluster</div>
-                            <div class="cluster-tier-badge" style="background: rgba(74, 158, 255, 0.2); color: #4a9eff;">Tier 1</div>
-                        </div>
-                        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-                            Combine 5 planets into a unified cluster
-                        </div>
-                        <div class="cluster-stats">
-                            <div class="cluster-stat">Available: <strong>${availablePlanets.length}</strong></div>
-                            <div class="cluster-stat">Required: <strong>5</strong></div>
-                        </div>
-                        <button class="create-cluster-btn" 
-                                style="border-color: #4a9eff; color: #4a9eff;"
-                                onclick="window.game.createCluster(1)"
-                                ${!canCreateTier1 ? 'disabled' : ''}>
-                            Create Tier 1 Cluster
-                        </button>
-                    </div>
-                `;
-                
-                // Create Tier 2 Cluster
-                html += `
-                    <div class="cluster-item cluster-tier-2">
-                        <div class="cluster-header">
-                            <div class="cluster-name" style="color: #9d4aff;">⭐⭐ Tier 2 Cluster</div>
-                            <div class="cluster-tier-badge" style="background: rgba(157, 74, 255, 0.2); color: #9d4aff;">Tier 2</div>
-                        </div>
-                        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-                            Combine 5 Tier-1 clusters (25 planets total)
-                        </div>
-                        <div class="cluster-stats">
-                            <div class="cluster-stat">Available: <strong>${tier1Clusters.length}</strong></div>
-                            <div class="cluster-stat">Required: <strong>5 Tier-1</strong></div>
-                        </div>
-                        <button class="create-cluster-btn" 
-                                style="border-color: #9d4aff; color: #9d4aff;"
-                                onclick="window.game.createCluster(2)"
-                                ${!canCreateTier2 ? 'disabled' : ''}>
-                            Create Tier 2 Cluster
-                        </button>
-                    </div>
-                `;
-                
-                // Create Tier 3 Cluster
-                html += `
-                    <div class="cluster-item cluster-tier-3">
-                        <div class="cluster-header">
-                            <div class="cluster-name" style="color: #ff4a9d;">⭐⭐⭐ Tier 3 Cluster</div>
-                            <div class="cluster-tier-badge" style="background: rgba(255, 74, 157, 0.2); color: #ff4a9d;">Tier 3</div>
-                        </div>
-                        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-                            Combine 5 Tier-2 clusters (125 planets total)
-                        </div>
-                        <div class="cluster-stats">
-                            <div class="cluster-stat">Available: <strong>${tier2Clusters.length}</strong></div>
-                            <div class="cluster-stat">Required: <strong>5 Tier-2</strong></div>
-                        </div>
-                        <button class="create-cluster-btn" 
-                                style="border-color: #ff4a9d; color: #ff4a9d;"
-                                onclick="window.game.createCluster(3)"
-                                ${!canCreateTier3 ? 'disabled' : ''}>
-                            Create Tier 3 Cluster
-                        </button>
-                    </div>
-                `;
-                
-                // Create Tier 4 Cluster
-                html += `
-                    <div class="cluster-item cluster-tier-4">
-                        <div class="cluster-header">
-                            <div class="cluster-name" style="color: #ffaa4a;">⭐⭐⭐⭐ Tier 4 Cluster</div>
-                            <div class="cluster-tier-badge" style="background: rgba(255, 170, 74, 0.2); color: #ffaa4a;">Tier 4</div>
-                        </div>
-                        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-                            Combine 5 Tier-3 clusters (625 planets total)
-                        </div>
-                        <div class="cluster-stats">
-                            <div class="cluster-stat">Available: <strong>${tier3Clusters.length}</strong></div>
-                            <div class="cluster-stat">Required: <strong>5 Tier-3</strong></div>
-                        </div>
-                        <button class="create-cluster-btn" 
-                                style="border-color: #ffaa4a; color: #ffaa4a;"
-                                onclick="window.game.createCluster(4)"
-                                ${!canCreateTier4 ? 'disabled' : ''}>
-                            Create Tier 4 Cluster
-                        </button>
-                    </div>
-                `;
-                
-                // Create Tier 5 Cluster
-                html += `
-                    <div class="cluster-item cluster-tier-5">
-                        <div class="cluster-header">
-                            <div class="cluster-name" style="color: #ffd700;">⭐⭐⭐⭐⭐ Tier 5 Cluster</div>
-                            <div class="cluster-tier-badge" style="background: rgba(255, 215, 0, 0.2); color: #ffd700;">Tier 5</div>
-                        </div>
-                        <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">
-                            Combine 5 Tier-4 clusters (3,125 planets total) - MAXIMUM
-                        </div>
-                        <div class="cluster-stats">
-                            <div class="cluster-stat">Available: <strong>${tier4Clusters.length}</strong></div>
-                            <div class="cluster-stat">Required: <strong>5 Tier-4</strong></div>
-                        </div>
-                        <button class="create-cluster-btn" 
-                                style="border-color: #ffd700; color: #ffd700;"
-                                onclick="window.game.createCluster(5)"
-                                ${!canCreateTier5 ? 'disabled' : ''}>
-                            Create Tier 5 Cluster
-                        </button>
-                    </div>
-                `;
-                
-                // Show existing clusters
-                if (this.clusters.length > 0) {
-                    html += `<div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
-                        <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--accent-primary); margin-bottom: 12px;">
-                            Your Clusters (${this.clusters.length})
-                        </div>
-                    `;
-                    
-                    html += this.clusters.map(cluster => {
-                        const tierColors = {
-                            1: '#4a9eff',
-                            2: '#9d4aff',
-                            3: '#ff4a9d',
-                            4: '#ffaa4a',
-                            5: '#ffd700'
-                        };
-                        const color = tierColors[cluster.tier];
-                        const stars = '⭐'.repeat(cluster.tier);
-                        
-                        return `
-                            <div class="cluster-item cluster-tier-${cluster.tier}" style="margin-bottom: 8px;">
-                                <div class="cluster-header">
-                                    <div class="cluster-name" style="color: ${color};">${stars} ${cluster.name}</div>
-                                    <div class="cluster-tier-badge" style="background: rgba(${cluster.tier === 5 ? '255,215,0' : '0,217,255'}, 0.2); color: ${color};">
-                                        Tier ${cluster.tier}
-                                    </div>
-                                </div>
-                                <div class="cluster-stats">
-                                    <div class="cluster-stat">🌍 Planets: <strong>${cluster.planetCount}</strong></div>
-                                    <div class="cluster-stat">👥 Population: <strong>${(cluster.population || 0).toLocaleString()}</strong></div>
-                                    <div class="cluster-stat">⛏️ Metal: <strong>${(cluster.resources?.metal || 0).toLocaleString()}</strong></div>
-                                    <div class="cluster-stat">⚡ HE3: <strong>${(cluster.resources?.he3 || 0).toLocaleString()}</strong></div>
-                                    <div class="cluster-stat">🌾 Food: <strong>${(cluster.resources?.food || 0).toLocaleString()}</strong></div>
-                                    <div class="cluster-stat">Status: <strong style="color: var(--accent-secondary);">Active</strong></div>
-                                </div>
+
+                const availablePlanets  = this.planets.filter(p => p.owner === this.selectedRace.name && !p.inCluster);
+                const tier1Clusters     = this.clusters.filter(c => c.tier === 1 && !c.inCluster);
+                const tier2Clusters     = this.clusters.filter(c => c.tier === 2 && !c.inCluster);
+                const tier3Clusters     = this.clusters.filter(c => c.tier === 3 && !c.inCluster);
+                const tier4Clusters     = this.clusters.filter(c => c.tier === 4 && !c.inCluster);
+
+                const tierColors  = { 1:'#4a9eff', 2:'#9d4aff', 3:'#ff4a9d', 4:'#ffaa4a', 5:'#ffd700' };
+                const tierNames   = { 1:'Stellar Sector', 2:'Galactic Region', 3:'Star Empire', 4:'Cosmic Domain', 5:'Universal Sovereignty' };
+                const tierBadge   = { 1:'rgba(74,158,255,0.2)', 2:'rgba(157,74,255,0.2)', 3:'rgba(255,74,157,0.2)', 4:'rgba(255,170,74,0.2)', 5:'rgba(255,215,0,0.2)' };
+                const dropBonuses = { 1:'+10%', 2:'+20%', 3:'+45%', 4:'+60%', 5:'+75%' };
+
+                const buildTierCard = (tier, available, required, label, items, idKey) => {
+                    const color   = tierColors[tier];
+                    const canOpen = available >= required;
+                    const stars   = '⭐'.repeat(tier);
+                    const drop    = dropBonuses[tier];
+
+                    // Build preview of selectable items (first 10 shown, scroll for more)
+                    const previewItems = items.slice(0, 20).map(item => {
+                        const name    = item.name;
+                        const metal   = item.resources?.metal || 0;
+                        const he3     = item.resources?.he3   || 0;
+                        const food    = item.resources?.food  || 0;
+                        const pop     = item.population       || 0;
+                        const pcount  = item.planetCount      || 1;
+                        return `<div class="cl-sel-item" data-id="${item[idKey]}" data-tier="${tier}"
+                            onclick="window.game._toggleClusterSelection(this, ${tier}, ${required})"
+                            style="padding:6px 8px;margin-bottom:3px;border-radius:5px;border:1px solid rgba(255,255,255,0.08);
+                            background:rgba(0,0,0,0.2);cursor:pointer;display:flex;align-items:center;gap:8px;transition:all 0.15s;">
+                            <div style="width:14px;height:14px;border-radius:3px;border:2px solid ${color};flex-shrink:0;background:transparent;" class="cl-checkbox"></div>
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-size:11px;font-weight:600;color:#e8f0ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+                                <div style="font-size:9px;color:#8ba3c7;">${tier===1 ? `⛏️${metal} ⚡${he3} 🌾${food} 👥${pop}` : `🌍${pcount}p ⛏️${metal} ⚡${he3} 👥${pop}`}</div>
                             </div>
-                        `;
+                        </div>`;
                     }).join('');
-                    
+
+                    return `<div class="cluster-item cluster-tier-${tier}" style="margin-bottom:14px;">
+                        <div class="cluster-header">
+                            <div class="cluster-name" style="color:${color};">${stars} Tier ${tier} — ${tierNames[tier]}</div>
+                            <div class="cluster-tier-badge" style="background:${tierBadge[tier]};color:${color};">Tier ${tier}</div>
+                        </div>
+                        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">
+                            ${label} &nbsp;·&nbsp; <span style="color:${color};font-weight:700;">🎲 ${drop} artifact &amp; crafting drop rate</span>
+                        </div>
+                        <div class="cluster-stats" style="margin-bottom:8px;">
+                            <div class="cluster-stat">Available: <strong style="color:${canOpen?color:'#666'}">${available}</strong></div>
+                            <div class="cluster-stat">Required: <strong>5</strong></div>
+                            <div id="clSelCount_${tier}" class="cluster-stat">Selected: <strong>0 / 5</strong></div>
+                        </div>
+                        ${canOpen ? `
+                        <div style="max-height:180px;overflow-y:auto;margin-bottom:8px;padding-right:2px;" id="clSelList_${tier}">
+                            ${previewItems}
+                        </div>
+                        <div id="clSelPreview_${tier}" style="font-size:10px;color:#8ba3c7;margin-bottom:8px;min-height:14px;"></div>
+                        <button class="create-cluster-btn" id="clCreateBtn_${tier}"
+                            style="border-color:${color};color:${color};opacity:0.4;pointer-events:none;"
+                            onclick="window.game.confirmClusterCreation(${tier})">
+                            Create Tier ${tier} Cluster (select 5 above)
+                        </button>` : `
+                        <button class="create-cluster-btn" disabled style="border-color:#444;color:#555;">
+                            Need ${required - available} more ${tier===1?'planets':'Tier '+(tier-1)+' clusters'}
+                        </button>`}
+                    </div>`;
+                };
+
+                let html = '';
+                html += buildTierCard(1, availablePlanets.length, 5, 'Select 5 owned planets to combine', availablePlanets, 'id');
+                html += buildTierCard(2, tier1Clusters.length,    5, 'Select 5 Tier-1 clusters to combine', tier1Clusters, 'id');
+                html += buildTierCard(3, tier2Clusters.length,    5, 'Select 5 Tier-2 clusters to combine', tier2Clusters, 'id');
+                html += buildTierCard(4, tier3Clusters.length,    5, 'Select 5 Tier-3 clusters to combine', tier3Clusters, 'id');
+                html += buildTierCard(5, tier4Clusters.length,    5, 'Select 5 Tier-4 clusters to combine (MAXIMUM)', tier4Clusters, 'id');
+
+                // Existing clusters section
+                if (this.clusters.length > 0) {
+                    html += `<div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border-color);">
+                        <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--accent-primary);margin-bottom:12px;">
+                            Your Clusters (${this.clusters.length})
+                        </div>`;
+                    html += this.clusters.map(cluster => {
+                        const color = tierColors[cluster.tier] || '#8ba3c7';
+                        const stars = '⭐'.repeat(cluster.tier);
+                        const drop  = dropBonuses[cluster.tier] || '';
+                        return `<div class="cluster-item cluster-tier-${cluster.tier}" style="margin-bottom:8px;">
+                            <div class="cluster-header">
+                                <div class="cluster-name" style="color:${color};">${stars} ${cluster.name}</div>
+                                <div class="cluster-tier-badge" style="background:rgba(${cluster.tier===5?'255,215,0':'0,217,255'},0.2);color:${color};">Tier ${cluster.tier}</div>
+                            </div>
+                            <div class="cluster-stats">
+                                <div class="cluster-stat">🌍 Planets: <strong>${cluster.planetCount}</strong></div>
+                                <div class="cluster-stat">👥 Pop: <strong>${(cluster.population||0).toLocaleString()}</strong></div>
+                                <div class="cluster-stat">⛏️ Metal: <strong>${(cluster.resources?.metal||0).toLocaleString()}</strong></div>
+                                <div class="cluster-stat">⚡ HE3: <strong>${(cluster.resources?.he3||0).toLocaleString()}</strong></div>
+                                <div class="cluster-stat">🌾 Food: <strong>${(cluster.resources?.food||0).toLocaleString()}</strong></div>
+                                <div class="cluster-stat" style="color:${color};">🎲 Drop: <strong>${drop}</strong></div>
+                            </div>
+                        </div>`;
+                    }).join('');
                     html += '</div>';
                 }
-                
+
                 container.innerHTML = html;
+
+                // Initialize selection state
+                if (!this._clusterSelections) this._clusterSelections = {};
+                [1,2,3,4,5].forEach(t => { this._clusterSelections[t] = []; });
+            }
+
+            // Toggle selection of a planet/cluster item for cluster building
+            _toggleClusterSelection(el, tier, required) {
+                if (!this._clusterSelections) this._clusterSelections = {};
+                if (!this._clusterSelections[tier]) this._clusterSelections[tier] = [];
+
+                const id   = el.dataset.id;
+                const sel  = this._clusterSelections[tier];
+                const idx  = sel.indexOf(id);
+                const color = { 1:'#4a9eff', 2:'#9d4aff', 3:'#ff4a9d', 4:'#ffaa4a', 5:'#ffd700' }[tier];
+                const box  = el.querySelector('.cl-checkbox');
+
+                if (idx >= 0) {
+                    // Deselect
+                    sel.splice(idx, 1);
+                    el.style.background = 'rgba(0,0,0,0.2)';
+                    el.style.borderColor = 'rgba(255,255,255,0.08)';
+                    if (box) { box.style.background = 'transparent'; box.style.borderColor = color; }
+                } else {
+                    if (sel.length >= required) {
+                        this.showNotification(`⚠️ You already have ${required} selected. Deselect one first.`);
+                        return;
+                    }
+                    sel.push(id);
+                    el.style.background = `rgba(${tier===1?'74,158,255':tier===2?'157,74,255':tier===3?'255,74,157':tier===4?'255,170,74':'255,215,0'},0.15)`;
+                    el.style.borderColor = color;
+                    if (box) { box.style.background = color; box.style.borderColor = color; }
+                }
+
+                // Update count label and button
+                const countEl = document.getElementById(`clSelCount_${tier}`);
+                const btn     = document.getElementById(`clCreateBtn_${tier}`);
+                const preview = document.getElementById(`clSelPreview_${tier}`);
+                if (countEl) countEl.innerHTML = `Selected: <strong>${sel.length} / ${required}</strong>`;
+
+                // Compute running totals for preview
+                if (preview && sel.length > 0) {
+                    let pm = 0, ph = 0, pf = 0, pp = 0, pc = 0;
+                    if (tier === 1) {
+                        sel.forEach(sid => {
+                            const planet = this.planets.find(p => String(p.id) === String(sid));
+                            if (planet) { pm += planet.resources?.metal||0; ph += planet.resources?.he3||0; pf += planet.resources?.food||0; pp += planet.population||0; pc++; }
+                        });
+                        preview.innerHTML = `<span style="color:#8ba3c7;">Projected cluster: ⛏️${pm} ⚡${ph} 🌾${pf} 👥${pp} (${pc} planets)</span>`;
+                    } else {
+                        sel.forEach(sid => {
+                            const cl = this.clusters.find(c => String(c.id) === String(sid));
+                            if (cl) { pm += cl.resources?.metal||0; ph += cl.resources?.he3||0; pf += cl.resources?.food||0; pp += cl.population||0; pc += cl.planetCount||0; }
+                        });
+                        preview.innerHTML = `<span style="color:#8ba3c7;">Projected cluster: ⛏️${pm} ⚡${ph} 🌾${pf} 👥${pp} (${pc} planets)</span>`;
+                    }
+                } else if (preview) {
+                    preview.innerHTML = '';
+                }
+
+                if (btn) {
+                    if (sel.length >= required) {
+                        btn.style.opacity = '1';
+                        btn.style.pointerEvents = 'auto';
+                        btn.textContent = `✅ Create Tier ${tier} Cluster`;
+                    } else {
+                        btn.style.opacity = '0.4';
+                        btn.style.pointerEvents = 'none';
+                        btn.textContent = `Create Tier ${tier} Cluster (select ${required - sel.length} more)`;
+                    }
+                }
+            }
+
+            // Confirm and execute cluster creation using player-selected items
+            confirmClusterCreation(tier) {
+                const sel = (this._clusterSelections || {})[tier] || [];
+                if (sel.length < 5) {
+                    this.showNotification('⚠️ Select exactly 5 items to form a cluster.');
+                    return;
+                }
+
+                const tierNames = { 1:'Stellar Sector', 2:'Galactic Region', 3:'Star Empire', 4:'Cosmic Domain', 5:'Universal Sovereignty' };
+                let totalMetal = 0, totalHE3 = 0, totalFood = 0, totalPopulation = 0, totalPlanetCount = 0;
+
+                if (tier === 1) {
+                    sel.forEach(sid => {
+                        const planet = this.planets.find(p => String(p.id) === String(sid));
+                        if (planet) {
+                            planet.inCluster   = true;
+                            totalMetal        += planet.resources?.metal || 0;
+                            totalHE3          += planet.resources?.he3   || 0;
+                            totalFood         += planet.resources?.food  || 0;
+                            totalPopulation   += planet.population       || 0;
+                            totalPlanetCount++;
+                        }
+                    });
+                } else {
+                    sel.forEach(sid => {
+                        const cl = this.clusters.find(c => String(c.id) === String(sid));
+                        if (cl) {
+                            cl.inCluster       = true;
+                            totalMetal        += cl.resources?.metal || 0;
+                            totalHE3          += cl.resources?.he3   || 0;
+                            totalFood         += cl.resources?.food  || 0;
+                            totalPopulation   += cl.population       || 0;
+                            totalPlanetCount  += cl.planetCount      || 0;
+                        }
+                    });
+                }
+
+                const clusterName = `${tierNames[tier]} ${this.clusters.filter(c => c.tier === tier).length + 1}`;
+                this.clusters.push({
+                    id: Date.now(),
+                    name: clusterName,
+                    tier,
+                    planetCount: totalPlanetCount,
+                    resources: { metal: totalMetal, he3: totalHE3, food: totalFood },
+                    population: totalPopulation,
+                    inCluster: false,
+                    owner: this.selectedRace.name,
+                    createdAt: Date.now(),
+                    sourceItems: sel
+                });
+
+                // Clear selection for this tier
+                if (this._clusterSelections) this._clusterSelections[tier] = [];
+
+                this.renderClusters();
+                this.renderOwnedPlanets();
+                this.updateMap();
+                this.showNotification(
+                    `✨ ${clusterName} (Tier ${tier}) formed! ` +
+                    `⛏️${totalMetal.toLocaleString()} ⚡${totalHE3.toLocaleString()} 🌾${totalFood.toLocaleString()} 👥${totalPopulation.toLocaleString()}`
+                );
             }
             
             createCluster(tier) {
@@ -18447,6 +18770,167 @@ const SHIP_IMAGE_DATA = {
             }
             
             // Persistent defeat modal — stays open until player manually closes it
+            // ── Battle History & Intelligence Reports ──────────────────────
+            _recordBattle(data) {
+                if (!this.battleHistory) this.battleHistory = [];
+                this.battleHistory.unshift({ ...data, id: Date.now() });
+                if (this.battleHistory.length > 15) this.battleHistory = this.battleHistory.slice(0, 15);
+                const badge = document.getElementById('intelBadge');
+                if (badge) { badge.style.display = 'flex'; setTimeout(() => { badge.style.display = 'none'; }, 8000); }
+            }
+
+            _recordArtifactUse(data) {
+                if (!this.artifactUseHistory) this.artifactUseHistory = [];
+                this.artifactUseHistory.unshift({ ...data, id: Date.now(), type: 'artifact' });
+                if (this.artifactUseHistory.length > 15) this.artifactUseHistory = this.artifactUseHistory.slice(0, 15);
+            }
+
+            openIntelReports() {
+                document.getElementById('intelReportsPanel')?.remove();
+                const panel = document.createElement('div');
+                panel.id = 'intelReportsPanel';
+                panel.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.93);z-index:10020;display:flex;flex-direction:column;align-items:center;overflow-y:auto;padding:20px;box-sizing:border-box;';
+                const badge = document.getElementById('intelBadge');
+                if (badge) badge.style.display = 'none';
+                const ts = (color, active) => `padding:8px 16px;border-radius:6px;border:1px solid ${active?color:'#333'};background:${active?'rgba(0,0,0,0.4)':'transparent'};color:${active?color:'#8ba3c7'};cursor:pointer;font-size:12px;font-weight:700;transition:all 0.15s;`;
+                panel.innerHTML = `<div style="width:100%;max-width:900px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+                        <div>
+                            <div style="font-family:'Orbitron',sans-serif;font-size:20px;color:#00d9ff;letter-spacing:2px;">🕵️ INTELLIGENCE REPORTS</div>
+                            <div style="font-size:12px;color:#8ba3c7;margin-top:4px;">Battle records, artifact engagements &amp; power rankings</div>
+                        </div>
+                        <button onclick="document.getElementById('intelReportsPanel').remove()" style="padding:8px 18px;background:rgba(255,255,255,0.05);border:1px solid #333;border-radius:6px;color:#8ba3c7;cursor:pointer;font-size:13px;">✕ Close</button>
+                    </div>
+                    <div style="display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap;">
+                        <button class="intel-tab active" onclick="window.game._switchIntelTab('battles',this)" style="${ts('#00d9ff',true)}">⚔️ Battle Log (${(this.battleHistory||[]).length})</button>
+                        <button class="intel-tab" onclick="window.game._switchIntelTab('artifacts',this)" style="${ts('#ffd700',false)}">🔮 Artifact Events (${(this.artifactUseHistory||[]).length})</button>
+                        <button class="intel-tab" onclick="window.game._switchIntelTab('rankings',this)" style="${ts('#ff9500',false)}">📊 Power Rankings</button>
+                        <button class="intel-tab" onclick="window.game._switchIntelTab('guilds',this)" style="${ts('#9d4aff',false)}">🏛️ Guild Intel</button>
+                    </div>
+                    <div id="intelContent"></div>
+                </div>`;
+                document.body.appendChild(panel);
+                this._switchIntelTab('battles', panel.querySelector('.intel-tab.active'));
+            }
+
+            _switchIntelTab(tab, btn) {
+                document.querySelectorAll('.intel-tab').forEach(b => { b.style.borderColor='#333'; b.style.color='#8ba3c7'; b.style.background='transparent'; b.classList.remove('active'); });
+                if (btn) {
+                    const c = {battles:'#00d9ff',artifacts:'#ffd700',rankings:'#ff9500',guilds:'#9d4aff'}[tab]||'#00d9ff';
+                    btn.style.borderColor=c; btn.style.color=c; btn.style.background='rgba(0,0,0,0.4)'; btn.classList.add('active');
+                }
+                const content = document.getElementById('intelContent');
+                if (!content) return;
+
+                if (tab === 'battles') {
+                    const history = this.battleHistory || [];
+                    if (!history.length) { content.innerHTML = `<div style="text-align:center;padding:60px;color:#8ba3c7;"><div style="font-size:40px;margin-bottom:12px;">⚔️</div><div>No battles recorded yet.</div></div>`; return; }
+                    content.innerHTML = history.map(b => {
+                        const win = b.outcome==='victory', color=win?'#00ff88':'#ff4a4a', icon=win?'✅':'💀';
+                        const date=new Date(b.timestamp).toLocaleString();
+                        const sent=Object.values(b.attackForce||{}).reduce((s,c)=>s+c,0);
+                        const lost=Object.values(b.attackerLosses||{}).reduce((s,c)=>s+c,0);
+                        const kills=Object.values(b.defenderDestroyed||{}).reduce((s,c)=>s+c,0);
+                        const lossRows=Object.entries(b.attackForce||{}).map(([sn,sv])=>{
+                            const l=(b.attackerLosses||{})[sn]||0;
+                            return `<tr><td style="padding:3px 8px;color:#e8f0ff;font-size:11px;">🚀 ${sn}</td><td style="padding:3px 8px;text-align:center;color:#8ba3c7;font-size:11px;">${sv}</td><td style="padding:3px 8px;text-align:center;color:#ff4a4a;font-size:11px;">${l>0?'-'+l:'—'}</td><td style="padding:3px 8px;text-align:center;color:#00ff88;font-size:11px;">${sv-l}</td></tr>`;
+                        }).join('');
+                        const viral=(b.infectResults||[]).length>0?`<div style="margin-top:8px;padding:8px;background:rgba(139,0,0,0.1);border-radius:6px;border:1px solid rgba(139,0,0,0.3);"><div style="font-size:10px;color:#ff4444;font-weight:700;margin-bottom:4px;">🦠 HIVE CAPTURES</div>${(b.infectResults||[]).map(r=>`<div style="font-size:11px;color:#8ba3c7;">${r.name}: <span style="color:${r.captured>0?'#ff4444':'#666'}">${r.captured>0?'+'+r.captured+' captured':'resisted'}</span></div>`).join('')}</div>`:'';
+                        return `<div style="margin-bottom:12px;background:var(--bg-secondary);border:1px solid ${color}22;border-left:3px solid ${color};border-radius:8px;overflow:hidden;">
+                            <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;background:${win?'rgba(0,255,136,0.04)':'rgba(255,74,74,0.04)'}">
+                                <span style="font-size:20px;">${icon}</span>
+                                <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:${color};">${b.outcome.toUpperCase()} — ${b.target}</div><div style="font-size:11px;color:#8ba3c7;">${date} &nbsp;·&nbsp; ATK ${(b.attackPower||0).toLocaleString()} vs DEF ${(b.defense||0).toLocaleString()}</div></div>
+                                <div style="display:flex;gap:12px;font-size:11px;"><span style="color:#8ba3c7;">✈️ ${sent}</span><span style="color:#ff4a4a;">💀 ${lost}</span><span style="color:#ff9500;">🎯 ${kills}</span></div>
+                                <span style="color:#555;">▼</span>
+                            </div>
+                            <div style="display:none;padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);">
+                                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+                                    <div style="text-align:center;padding:8px;background:rgba(0,0,0,0.3);border-radius:6px;"><div style="font-size:9px;color:#8ba3c7;">SENT</div><div style="font-size:16px;font-weight:700;color:#e8f0ff;">${sent}</div></div>
+                                    <div style="text-align:center;padding:8px;background:rgba(255,74,74,0.08);border-radius:6px;border:1px solid rgba(255,74,74,0.15);"><div style="font-size:9px;color:#8ba3c7;">LOST</div><div style="font-size:16px;font-weight:700;color:#ff4a4a;">${lost}</div></div>
+                                    <div style="text-align:center;padding:8px;background:rgba(0,255,136,0.06);border-radius:6px;border:1px solid rgba(0,255,136,0.15);"><div style="font-size:9px;color:#8ba3c7;">SURVIVED</div><div style="font-size:16px;font-weight:700;color:#00ff88;">${sent-lost}</div></div>
+                                    <div style="text-align:center;padding:8px;background:rgba(255,136,0,0.08);border-radius:6px;border:1px solid rgba(255,136,0,0.15);"><div style="font-size:9px;color:#8ba3c7;">KILLS</div><div style="font-size:16px;font-weight:700;color:#ff9500;">${kills}</div></div>
+                                </div>
+                                <table style="width:100%;border-collapse:collapse;margin-bottom:8px;"><thead><tr style="color:#8ba3c7;font-size:10px;text-transform:uppercase;"><th style="text-align:left;padding:3px 8px;">Ship</th><th style="text-align:center;padding:3px 8px;">Sent</th><th style="text-align:center;padding:3px 8px;">Lost</th><th style="text-align:center;padding:3px 8px;">Survived</th></tr></thead><tbody>${lossRows}</tbody></table>
+                                ${viral}
+                            </div>
+                        </div>`;
+                    }).join('');
+
+                } else if (tab === 'artifacts') {
+                    const hist = this.artifactUseHistory || [];
+                    if (!hist.length) { content.innerHTML = `<div style="text-align:center;padding:60px;color:#8ba3c7;"><div style="font-size:40px;margin-bottom:12px;">🔮</div><div>No artifact events recorded yet.</div></div>`; return; }
+                    content.innerHTML = hist.map(ev => {
+                        const date=new Date(ev.timestamp).toLocaleString(), color=ev.subtype==='offensive'?'#ff4a4a':'#ffd700';
+                        return `<div style="margin-bottom:10px;padding:14px 16px;background:var(--bg-secondary);border:1px solid ${color}33;border-left:3px solid ${color};border-radius:8px;">
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><span style="font-size:22px;">${ev.icon||'🔮'}</span>
+                            <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:${color};">${ev.artifactName||'Unknown Artifact'}</div><div style="font-size:11px;color:#8ba3c7;">${date}${ev.description?' · '+ev.description:''}</div></div></div>
+                            ${ev.effects?`<div style="font-size:12px;color:#e8f0ff;background:rgba(0,0,0,0.3);padding:8px 10px;border-radius:5px;">${ev.effects}</div>`:''}
+                            ${ev.targetPlayer?`<div style="margin-top:6px;font-size:11px;color:#8ba3c7;">Target: <span style="color:#e8f0ff;">${ev.targetPlayer}</span></div>`:''}
+                        </div>`;
+                    }).join('');
+
+                } else if (tab === 'rankings') {
+                    const myPower=this.playerPowerRating||0, myRace=this.selectedRace?.name||'Unknown', myUser=this.playerData?.username||'You';
+                    const dc={'Easy':'#00ff88','Medium':'#ffaa44','Hard':'#ff9500','Elite':'#ff3366','Legendary':'#ff00ff'};
+                    let all=[];
+                    if (typeof botManager!=='undefined'&&botManager.bots) {
+                        botManager.bots.forEach(bot=>{
+                            const m={'Easy':0.5,'Medium':1.0,'Hard':1.5,'Elite':2.0,'Legendary':3.0}[bot.difficulty]||1;
+                            all.push({name:bot.username,race:bot.race,power:Math.floor(((bot.stats?.shipsBuilt||0)*40+(bot.stats?.planetsColonized||0)*200+(bot.stats?.battlesWon||0)*80)*m),isBot:true,difficulty:bot.difficulty});
+                        });
+                    }
+                    all.push({name:myUser,race:myRace,power:myPower,isMe:true});
+                    all.sort((a,b)=>b.power-a.power);
+                    const myRank=all.findIndex(p=>p.isMe)+1, top=all[0];
+                    content.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+                        <div style="padding:16px;background:rgba(0,217,255,0.06);border:1px solid rgba(0,217,255,0.25);border-radius:10px;"><div style="font-size:10px;color:#8ba3c7;text-transform:uppercase;margin-bottom:6px;">Your Rank</div><div style="font-size:32px;font-weight:900;color:#00d9ff;">#${myRank}</div><div style="font-size:12px;color:#8ba3c7;margin-top:4px;">⚡ ${myPower.toLocaleString()}</div><div style="font-size:11px;color:#8ba3c7;">${myRace}</div></div>
+                        <div style="padding:16px;background:rgba(255,215,0,0.06);border:1px solid rgba(255,215,0,0.25);border-radius:10px;"><div style="font-size:10px;color:#8ba3c7;text-transform:uppercase;margin-bottom:6px;">#1 Ranked</div><div style="font-size:18px;font-weight:900;color:#ffd700;">${top?.name||'—'}</div><div style="font-size:12px;color:#8ba3c7;margin-top:4px;">⚡ ${(top?.power||0).toLocaleString()}</div><div style="font-size:11px;color:#8ba3c7;">${top?.race||''} ${top?.difficulty?'('+top.difficulty+')':''}</div></div>
+                    </div>
+                    <div style="background:var(--bg-secondary);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+                        <div style="padding:12px 16px;background:rgba(0,0,0,0.3);border-bottom:1px solid rgba(255,255,255,0.06);font-size:11px;font-weight:700;text-transform:uppercase;color:#8ba3c7;">All Players — ${all.length} total</div>
+                        ${all.map((p,i)=>`<div style="display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.04);${p.isMe?'background:rgba(0,217,255,0.06);':''}">
+                            <div style="width:28px;text-align:center;font-size:13px;font-weight:700;color:${i===0?'#ffd700':i===1?'#c0c0c0':i===2?'#cd7f32':'#8ba3c7'};">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</div>
+                            <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:${p.isMe?700:500};color:${p.isMe?'#00d9ff':'#e8f0ff'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}${p.isMe?' (You)':''}</div><div style="font-size:10px;color:#8ba3c7;">${p.race||''}${p.difficulty?` · <span style="color:${dc[p.difficulty]||'#8ba3c7'}">${p.difficulty}</span>`:''}</div></div>
+                            <div style="text-align:right;"><div style="font-size:13px;font-weight:700;color:${p.isMe?'#00d9ff':'#e8f0ff'};">⚡${p.power.toLocaleString()}</div>${!p.isMe?`<div style="font-size:9px;color:#8ba3c7;">${p.power>myPower?'+':''}${(p.power-myPower).toLocaleString()} vs you</div>`:''}</div>
+                        </div>`).join('')}
+                    </div>`;
+
+                } else if (tab === 'guilds') {
+                    let gd=[];
+                    if (typeof guildManager!=='undefined'&&guildManager.guilds) {
+                        guildManager.guilds.forEach(guild=>{
+                            const mc=guild.members?guild.members.length:0;
+                            let cp=0;
+                            (guild.members||[]).forEach(m=>{
+                                const bot=typeof botManager!=='undefined'&&botManager.bots?.find(b=>b.username===m.username);
+                                if (bot){const mu={'Easy':0.5,'Medium':1.0,'Hard':1.5,'Elite':2.0,'Legendary':3.0}[bot.difficulty]||1;cp+=Math.floor(((bot.stats?.shipsBuilt||0)*40+(bot.stats?.planetsColonized||0)*200+(bot.stats?.battlesWon||0)*80)*mu);}
+                                else if(m.username===(this.playerData?.username))cp+=(this.playerPowerRating||0);
+                            });
+                            gd.push({...guild,mc,cp});
+                        });
+                        gd.sort((a,b)=>b.cp-a.cp);
+                    }
+                    const myGId=this.playerData?.guildId, myG=gd.find(g=>g.id===myGId);
+                    content.innerHTML=`${myG?`<div style="padding:16px;background:rgba(157,74,255,0.08);border:2px solid rgba(157,74,255,0.4);border-radius:10px;margin-bottom:20px;">
+                        <div style="font-size:10px;color:#9d4aff;font-weight:700;text-transform:uppercase;margin-bottom:8px;">Your Guild</div>
+                        <div style="font-size:20px;font-weight:900;color:#e8f0ff;margin-bottom:10px;">${myG.name||'Unknown'}</div>
+                        <div style="display:flex;gap:20px;flex-wrap:wrap;">
+                            <div><div style="font-size:10px;color:#8ba3c7;">Members</div><div style="font-size:20px;font-weight:700;color:#9d4aff;">👥 ${myG.mc}</div></div>
+                            <div><div style="font-size:10px;color:#8ba3c7;">Guild Power</div><div style="font-size:20px;font-weight:700;color:#ffd700;">⚡${myG.cp.toLocaleString()}</div></div>
+                            <div><div style="font-size:10px;color:#8ba3c7;">Rank</div><div style="font-size:20px;font-weight:700;color:#00ff88;">#${gd.indexOf(myG)+1}</div></div>
+                        </div></div>`:`<div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid #333;border-radius:10px;margin-bottom:20px;text-align:center;color:#8ba3c7;">You are not in a guild.</div>`}
+                    <div style="background:var(--bg-secondary);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+                        <div style="padding:12px 16px;background:rgba(0,0,0,0.3);border-bottom:1px solid rgba(255,255,255,0.06);font-size:11px;font-weight:700;text-transform:uppercase;color:#8ba3c7;">All Guilds — Power Rankings</div>
+                        ${!gd.length?`<div style="padding:40px;text-align:center;color:#8ba3c7;">No guild data available.</div>`:
+                        gd.map((g,i)=>{const isM=g.id===myGId;return`<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.04);${isM?'background:rgba(157,74,255,0.06);':''}">
+                            <div style="width:28px;text-align:center;font-size:13px;font-weight:700;color:${i===0?'#ffd700':i===1?'#c0c0c0':i===2?'#cd7f32':'#8ba3c7'};">${i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1)}</div>
+                            <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:${isM?'#9d4aff':'#e8f0ff'};">${g.name}${isM?' (Your Guild)':''}</div><div style="font-size:10px;color:#8ba3c7;">👥 ${g.mc} members</div></div>
+                            <div style="text-align:right;"><div style="font-size:14px;font-weight:700;color:${isM?'#9d4aff':'#ffd700'};">⚡${g.cp.toLocaleString()}</div><div style="font-size:9px;color:#8ba3c7;">Guild Power Rating</div></div>
+                        </div>`;}).join('')}
+                    </div>`;
+                }
+            }
+
             showDefeatModal(opts) {
                 // opts: { title, planetName, shipsLost, resourcesLost, planetCaptured, clusterCaptured }
                 document.getElementById('defeatModal')?.remove();
