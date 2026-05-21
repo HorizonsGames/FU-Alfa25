@@ -9139,44 +9139,28 @@
                 // Dedicated live-player attack interval — random between ~9 min and ~1h 49min
                 // Frequency reduced by 45% from original (5 min–1 hr window)
                 const scheduleBotAttack = () => {
-                    const minMs = 9.09 * 60 * 1000;    // ~9 min (5 min ÷ 0.55)
-                    const maxMs = 109.09 * 60 * 1000;  // ~109 min (60 min ÷ 0.55)
+                    // Extra randomisation: roll a second gate so attacks are not uniform
+                    const minMs = 10 * 60 * 1000;   // 10 min minimum gap
+                    const maxMs = 120 * 60 * 1000;  // 2 hour maximum gap
                     const delay = minMs + Math.random() * (maxMs - minMs);
                     setTimeout(() => {
-                        // Reschedule next attack regardless of outcome
-                        scheduleBotAttack();
-
-                        if (typeof game === 'undefined' || !game.planets) return;
-                        if (!this._botGameStates) this._botGameStates = new Map();
-
-                        // Power rating gate — only attack if player is above 500
-                        if (typeof game.calculatePlayerPowerRating === 'function') game.calculatePlayerPowerRating();
-                        const playerPower = game.playerPowerRating || 0;
-                        if (playerPower <= 500) return;
-
-                        // Weight bot selection toward harder difficulties
-                        const weightedBots = [];
-                        this.bots.forEach(bot => {
-                            const weight = { 'Easy': 1, 'Medium': 2, 'Hard': 4, 'Elite': 7, 'Legendary': 10 }[bot.difficulty] || 2;
-                            for (let i = 0; i < weight; i++) weightedBots.push(bot);
-                        });
-                        if (weightedBots.length === 0) return;
-
-                        const attacker = weightedBots[Math.floor(Math.random() * weightedBots.length)];
-                        const gameState = this._botGameStates.get(attacker.username) || this.initializeBotGameState(attacker);
-                        this._botGameStates.set(attacker.username, gameState);
-
-                        // Ensure bot has enough ships to attack
-                        if (!gameState.ships) {
-                            gameState.ships = { fighters: { count: 20 }, destroyers: { count: 5 } };
+                        // Only attack if player has planets and bots exist
+                        if (typeof game === 'undefined' || !game.planets) { scheduleBotAttack(); return; }
+                        const playerPlanets = game.planets.filter(p => p.owner === game.selectedRace?.name);
+                        if (playerPlanets.length === 0) { scheduleBotAttack(); return; }
+                        // Pick a random active bot to launch the attack
+                        if (typeof botManager !== 'undefined' && botManager.bots && botManager.bots.length > 0) {
+                            const eligible = botManager.bots.filter(b =>
+                                ['Hard','Elite','Legendary'].includes(b.difficulty) || Math.random() < 0.35
+                            );
+                            if (eligible.length > 0) {
+                                const attacker = eligible[Math.floor(Math.random() * eligible.length)];
+                                const gs = (botManager._botGameStates && botManager._botGameStates.get(attacker.username))
+                                           || botManager.initializeBotGameState(attacker);
+                                botManager.botAttackPlayer(attacker, gs);
+                            }
                         }
-                        const totalShips = Object.values(gameState.ships).reduce((s, sh) => s + (sh.count || 0), 0);
-                        if (totalShips < 10) {
-                            gameState.ships.fighters = { count: 15 + Math.floor(Math.random() * 20) };
-                            gameState.ships.destroyers = { count: 5 + Math.floor(Math.random() * 10) };
-                        }
-
-                        this.botAttackPlayer(attacker, gameState);
+                        scheduleBotAttack(); // reschedule
                     }, delay);
                 };
                 scheduleBotAttack();
@@ -13421,6 +13405,7 @@ const SHIP_IMAGE_DATA = {
                         
                         const planet = this.addRandomPlanet();
                         this.renderPlanets();
+                        this.renderAvailablePlanets();
                         this.updateMap();
                         this.showNotification(`✨ New planet discovered: ${planet.name}!`);
                         
@@ -13635,14 +13620,29 @@ const SHIP_IMAGE_DATA = {
                 const myUser = this.playerData?.username;
                 const ownedPlanets  = this.planets.filter(p => p.owner === myRace && !p.inCluster).sort((a, b) => a.name.localeCompare(b.name));
                 // Only show clusters owned by this player (owner set to race name or username)
-                const ownedClusters = this.clusters.filter(c => c.owner === myRace || c.owner === myUser);
+                const ownedClusters = this.clusters.filter(c =>
+                    (c.owner === myRace || c.owner === myUser) && !c.inCluster
+                );
                 
                 if (ownedPlanets.length === 0 && ownedClusters.length === 0) {
                     list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No owned planets</div>';
                     return;
                 }
                 
-                let html = '';
+                // ── Search All button ─────────────────────────────────────────
+                const searchAllCount = ownedPlanets.length + ownedClusters.length;
+                const searchAllCostC = ownedPlanets.length * 1000 + ownedClusters.reduce((s, c) => s + 1000 * (c.tier||1), 0);
+                const searchAllCostH = ownedPlanets.length * 500  + ownedClusters.reduce((s, c) => s + 500  * (c.tier||1), 0);
+
+                let html = `<div style="margin-bottom:12px;padding:10px 14px;background:rgba(255,215,0,0.06);border:1px solid rgba(255,215,0,0.3);border-radius:8px;">
+                    <div style="font-size:12px;font-weight:700;color:#ffd700;margin-bottom:4px;">🔍 Search All (${searchAllCount} targets)</div>
+                    <div style="font-size:11px;color:#8ba3c7;margin-bottom:8px;">Scan every planet &amp; cluster at once. Cost: ₡${searchAllCostC.toLocaleString()} + ⚡${searchAllCostH.toLocaleString()} · Drop rate +250%</div>
+                    <button onclick="window.game.searchAllPlanetsAndClusters()"
+                        style="width:100%;padding:7px;font-size:12px;font-weight:700;background:rgba(255,215,0,0.12);border:1px solid #ffd700;border-radius:6px;color:#ffd700;cursor:pointer;transition:background 0.2s;"
+                        onmouseover="this.style.background='rgba(255,215,0,0.22)'" onmouseout="this.style.background='rgba(255,215,0,0.12)'">
+                        🔍 Search All Planets &amp; Clusters
+                    </button>
+                </div>`;
                 
                 // Show clusters first
                 if (ownedClusters.length > 0) {
@@ -13663,7 +13663,7 @@ const SHIP_IMAGE_DATA = {
                         const totalPopulation = cluster.population             || 0;
                         
                         return `
-                            <div onclick="window.game.selectClusterForBuilding(${index})"
+                            <div onclick="window.game.selectClusterForBuilding(${cluster.id})"
                                  onmouseenter="game.showClusterImageModal()"
                                  onmouseleave="game.hideClusterImageModal()"
                                  style="margin-bottom: 8px; padding: 10px; background: var(--bg-tertiary); border: 2px solid ${color}; border-radius: 6px; cursor: pointer; transition: all 0.2s; ${viralStyle}">
@@ -14067,15 +14067,18 @@ const SHIP_IMAGE_DATA = {
                 this.renderBuildingPanel();
             }
             
-            selectClusterForBuilding(clusterIndex) {
-                const ownedClusters = this.clusters.filter(c => !c.inCluster);
-                const cluster = ownedClusters[clusterIndex];
+            selectClusterForBuilding(clusterId) {
+                // Look up by id — never by index, which differs between filtered arrays
+                const cluster = this.clusters.find(c => c.id === clusterId);
                 if (!cluster) return;
-                
+                // Tag it so renderBuildingPanel can distinguish from planets reliably
+                cluster._isCluster = true;
                 this.selectedPlanetForBuilding = cluster;
-                this.selectedPlanet = cluster;
-                this.selectedCluster = cluster;
+                this.selectedPlanet            = cluster;
+                this.selectedCluster           = cluster;
                 this.renderBuildingPanel();
+                // Switch to Buildings tab so the player sees the panel
+                this.switchPlanetTab('buildings');
             }
             
             searchForArtifactCluster(clusterId) {
@@ -14956,12 +14959,10 @@ const SHIP_IMAGE_DATA = {
                             artifactBonus = 1.10; // +10% chance
                         }
                         
-                        // +25% crafting material drop rate bonus (v2.5 update)
-                        // +50% global drop rate increase (v3.0 update) → 1.25 × 1.5 = 1.875
-                        const craftingBonus = 1.875;
-
-                        // +50% global drop rate multiplier applied to all artifact rolls
-                        const globalDropBoost = 1.5;
+                        // +250% drop rate increase applied to all artifact and crafting rolls
+                        // Previous globalDropBoost was 1.5; ×3.5 = 5.25 net multiplier
+                        const craftingBonus = 1.875 * 3.5;    // 6.5625 — crafting material drop weight
+                        const globalDropBoost = 1.5   * 3.5;  // 5.25   — ancient artifact drop weight
                         
                         // Check for each artifact type with their specific probabilities
                         let foundArtifact = null;
@@ -17569,7 +17570,7 @@ const SHIP_IMAGE_DATA = {
                 }
                 
                 const target = this.selectedPlanetForBuilding;
-                const isCluster = target.tier !== undefined; // Clusters have tier, planets don't
+                const isCluster = !!(target._isCluster || (target.tier !== undefined && target.planetCount !== undefined && !target.resources?.he3 === false));
                 
                 if (isCluster) {
                     // Cluster info display
@@ -17679,6 +17680,19 @@ const SHIP_IMAGE_DATA = {
                 const tierBadge   = { 1:'rgba(74,158,255,0.2)', 2:'rgba(157,74,255,0.2)', 3:'rgba(255,74,157,0.2)', 4:'rgba(255,170,74,0.2)', 5:'rgba(255,215,0,0.2)' };
                 const dropBonuses = { 1:'+10%', 2:'+20%', 3:'+45%', 4:'+60%', 5:'+75%' };
 
+                const canQuick = availablePlanets.length >= 5;
+                // Prepend the Quick Cluster button to the container before building the tier cards
+                const quickHtml = `<div style="margin-bottom:14px;padding:10px 14px;background:rgba(0,217,255,0.06);border:1px solid rgba(0,217,255,0.3);border-radius:8px;">
+                    <div style="font-size:12px;font-weight:700;color:#00d9ff;margin-bottom:6px;">⚡ Quick Cluster</div>
+                    <div style="font-size:11px;color:#8ba3c7;margin-bottom:8px;">Auto-combines your first 5 unclustered planets into a Tier 1 cluster.</div>
+                    <div style="font-size:11px;color:#8ba3c7;margin-bottom:8px;">Eligible: <strong style="color:${canQuick?'#00d9ff':'#555'}">${availablePlanets.length}</strong> / 5</div>
+                    <button onclick="window.game.quickCreateCluster()"
+                        style="width:100%;padding:8px;font-size:12px;font-weight:700;background:${canQuick?'rgba(0,217,255,0.15)':'rgba(255,255,255,0.03)'};border:1px solid ${canQuick?'#00d9ff':'#444'};border-radius:6px;color:${canQuick?'#00d9ff':'#555'};cursor:${canQuick?'pointer':'not-allowed'};"
+                        ${canQuick?'':'disabled'}>
+                        ${canQuick?'⚡ Create Quick Cluster (first 5 planets)':`Need ${5-availablePlanets.length} more unclustered planets`}
+                    </button>
+                </div>`;
+
                 const buildTierCard = (tier, available, required, label, items, idKey) => {
                     const color   = tierColors[tier];
                     const canOpen = available >= required;
@@ -17769,7 +17783,7 @@ const SHIP_IMAGE_DATA = {
                     html += '</div>';
                 }
 
-                container.innerHTML = html;
+                container.innerHTML = quickHtml + html;
 
                 // Initialize selection state
                 if (!this._clusterSelections) this._clusterSelections = {};
@@ -18182,22 +18196,39 @@ const SHIP_IMAGE_DATA = {
                 
                 this.resources.researchPoints = (this.resources.researchPoints || 0) + ((1 / 300) * researchBonus * scienceLabBonus);
                 
-                // Apply tech bonuses to resource generation
-                const metalTechBonus = 1 + ((this.techBonuses.metal || 0) / 100);
-                const he3TechBonus = 1 + ((this.techBonuses.he3 || 0) / 100);
-                const foodTechBonus = 1 + ((this.techBonuses.food || 0) / 100);
-                const creditTechBonus = 1 + ((this.techBonuses.credits || 0) / 100);
-                
-                // Multiply final resources by tech bonuses
-                const metalGain = (this.resources.metal - MAX_RESOURCE) * (metalTechBonus - 1);
-                const he3Gain = (this.resources.he3 - MAX_RESOURCE) * (he3TechBonus - 1);
-                const foodGain = (this.resources.food - MAX_RESOURCE) * (foodTechBonus - 1);
-                const creditGainBonus = creditGeneration * (creditTechBonus - 1);
-                
-                this.resources.metal += metalGain;
-                this.resources.he3 += he3Gain;
-                this.resources.food += foodGain;
-                this.resources.credits += creditGainBonus;
+                // Apply tech bonuses to per-tick resource gains only (not to accumulated totals)
+                const metalTechBonus  = (this.techBonuses.metal   || 0) / 100;
+                const he3TechBonus    = (this.techBonuses.he3     || 0) / 100;
+                const foodTechBonus   = (this.techBonuses.food    || 0) / 100;
+                const creditTechBonus = (this.techBonuses.credits || 0) / 100;
+
+                // Calculate per-tick gains from this tick only, then apply bonus fraction
+                // We approximate per-tick metal/he3/food as the sum from ownedPlanets this tick
+                // Add bonus as a fraction of each tick's net production
+                if (metalTechBonus > 0) {
+                    let tickMetal = 0;
+                    ownedPlanets.forEach(p => {
+                        tickMetal += Math.floor((p.resources?.metal || 0) / 60 * globalMetalModifier);
+                    });
+                    this.resources.metal += Math.floor(tickMetal * metalTechBonus);
+                }
+                if (he3TechBonus > 0) {
+                    let tickHe3 = 0;
+                    ownedPlanets.forEach(p => {
+                        tickHe3 += Math.floor((p.resources?.he3 || 0) / 60 * globalHE3Modifier);
+                    });
+                    this.resources.he3 += Math.floor(tickHe3 * he3TechBonus);
+                }
+                if (foodTechBonus > 0) {
+                    let tickFood = 0;
+                    ownedPlanets.forEach(p => {
+                        tickFood += Math.floor((p.resources?.food || 0) / 60 * globalFoodModifier);
+                    });
+                    this.resources.food += Math.floor(tickFood * foodTechBonus);
+                }
+                if (creditTechBonus > 0) {
+                    this.resources.credits += Math.floor(creditGeneration * creditTechBonus);
+                }
                 
                 // Deduct fleet maintenance costs (per hour, divided by 3600)
                 const maintenanceCost = this.calculateMaintenanceCost();
@@ -18931,6 +18962,85 @@ const SHIP_IMAGE_DATA = {
                 }
             }
 
+            // Quick-cluster: auto-selects first 5 unclustered owned planets
+            quickCreateCluster() {
+                const available = this.planets.filter(p => p.owner === this.selectedRace.name && !p.inCluster);
+                if (available.length < 5) {
+                    this.showNotification(`⚠️ Need at least 5 unclustered planets (have ${available.length}).`);
+                    return;
+                }
+                if (!this._clusterSelections) this._clusterSelections = {};
+                this._clusterSelections[1] = available.slice(0, 5).map(p => String(p.id));
+                this.confirmClusterCreation(1);
+            }
+
+            // Search ALL owned planets and clusters in one action
+            searchAllPlanetsAndClusters() {
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+                const ownedPlanets  = this.planets.filter(p => p.owner === myRace);
+                const ownedClusters = this.clusters.filter(c => (c.owner === myRace || c.owner === myUser) && !c.inCluster);
+                const total = ownedPlanets.length + ownedClusters.length;
+                if (total === 0) { this.showNotification('⚠️ No planets or clusters to search.'); return; }
+
+                const planetCostC = ownedPlanets.length  * 1000;
+                const planetCostH = ownedPlanets.length  * 500;
+                let clusterCostC = 0, clusterCostH = 0;
+                ownedClusters.forEach(c => { clusterCostC += 1000 * c.tier; clusterCostH += 500 * c.tier; });
+                const totalC = planetCostC + clusterCostC;
+                const totalH = planetCostH + clusterCostH;
+
+                if (this.resources.credits < totalC || this.resources.he3 < totalH) {
+                    this.showNotification(`⚠️ Need ₡${totalC.toLocaleString()} & ⚡${totalH.toLocaleString()} to Search All.`);
+                    return;
+                }
+                this.resources.credits -= totalC;
+                this.resources.he3     -= totalH;
+                this.updateResources();
+                this.showNotification(`🔍 Searching all ${total} planets & clusters... (30s)`);
+
+                ownedPlanets.forEach((planet, i) => {
+                    setTimeout(() => { this._resolveArtifactSearch(planet.id); }, 30000 + i * 150);
+                });
+                ownedClusters.forEach((cluster, i) => {
+                    setTimeout(() => { this._resolveClusterSearch(cluster.id); }, 30000 + (ownedPlanets.length + i) * 150);
+                });
+            }
+
+            _resolveArtifactSearch(planetId) {
+                const planet = this.planets.find(p => p.id === planetId);
+                if (!planet) return;
+                if (this.artifactSearches) delete this.artifactSearches[planetId];
+                const BOOST = 3.5; // base × 3.5 = +250% above base
+                const chance = 0.015 * BOOST;
+                if (Math.random() < chance) this._grantArtifactDrop(planet.name);
+            }
+
+            _resolveClusterSearch(clusterId) {
+                const cluster = this.clusters.find(c => c.id === clusterId);
+                if (!cluster) return;
+                const tierDropBonus = { 1:1.10, 2:1.20, 3:1.45, 4:1.60, 5:1.75 };
+                const chance = (cluster.tier / 1000) * (tierDropBonus[cluster.tier] || 1) * 3.5;
+                if (Math.random() < chance) this._grantArtifactDrop(cluster.name);
+            }
+
+            _grantArtifactDrop(sourceName) {
+                if (!this.inventory) this.inventory = [];
+                if (typeof ARTIFACTS !== 'undefined') {
+                    const keys = Object.keys(ARTIFACTS);
+                    const pick = ARTIFACTS[keys[Math.floor(Math.random() * keys.length)]];
+                    if (pick) {
+                        this.inventory.push({ artifactId: pick.id, name: pick.name, foundAt: new Date().toISOString(), source: sourceName });
+                        this.showNotification(`✨ Found: ${pick.name} while searching ${sourceName}!`);
+                        return;
+                    }
+                }
+                if (!this.artifacts) this.artifacts = [];
+                this.artifacts.push({ id: Date.now(), sourceName, foundAt: new Date().toISOString() });
+                this.showNotification(`✨ ARTIFACT FOUND in ${sourceName}! (${this.artifacts.length}/3)`);
+                if (this.artifacts.length >= 3) this.showNotification('🔥 You can now research the ULTIMATE WEAPON!');
+            }
+
             showDefeatModal(opts) {
                 // opts: { title, planetName, shipsLost, resourcesLost, planetCaptured, clusterCaptured }
                 document.getElementById('defeatModal')?.remove();
@@ -19076,7 +19186,9 @@ const SHIP_IMAGE_DATA = {
                 
                 this.showNotification(`🔬 Research Started: ${tech.name}`);
                 this.updateDisplay();
+                // Force immediate re-render — switch to available tab then back to ensure grid refreshes
                 this.renderTechTree();
+                requestAnimationFrame(() => this.renderTechTree());
                 this.saveGameState();
             }
             
