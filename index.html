@@ -12638,6 +12638,9 @@ const SHIP_IMAGE_DATA = {
                     
                     if (playerData.gameState.planets && playerData.gameState.planets.length > 0) {
                         this.planets = playerData.gameState.planets;
+                        // Restore ID counter — prevents new planets reusing IDs from existing ones
+                        this._planetIdCounter = playerData.gameState._planetIdCounter ||
+                            Math.max(Date.now(), ...this.planets.map(p => Number(p.id) || 0));
                         console.log(`📍 Loaded ${this.planets.length} planets`);
                         
                         // Calculate total population from owned planets
@@ -12790,6 +12793,7 @@ const SHIP_IMAGE_DATA = {
                 return {
                     resources: this.resources,
                     planets: this.planets,
+                    _planetIdCounter: this._planetIdCounter || (Date.now() + this.planets.length),
                     ships: this.ships,
                     fleets: this.fleets,
                     researchQueue: this.researchQueue,
@@ -13397,16 +13401,21 @@ const SHIP_IMAGE_DATA = {
             
             addRandomPlanet() {
                 const planetType = PLANET_TYPES[Math.floor(Math.random() * PLANET_TYPES.length)];
-                const modifiers = PLANET_MODIFIERS[planetType];
-                
-                // Base resources
-                const baseMetal = Math.floor(Math.random() * 5000) + 1000;
-                const baseHE3 = Math.floor(Math.random() * 2000) + 500;
-                const baseFood = Math.floor(Math.random() * 3000) + 500;
-                const basePopulation = Math.floor(Math.random() * 500) + 100;
-                
+                const modifiers  = PLANET_MODIFIERS[planetType];
+
+                const baseMetal      = Math.floor(Math.random() * 5000) + 1000;
+                const baseHE3        = Math.floor(Math.random() * 2000) + 500;
+                const baseFood       = Math.floor(Math.random() * 3000) + 500;
+                const basePopulation = Math.floor(Math.random() * 500)  + 100;
+
+                // Use integer IDs — float IDs lose precision on JSON round-trip
+                // causing claimPlanet's planet.find(p => p.id === id) to miss the planet
+                if (!this._planetIdCounter) this._planetIdCounter = Date.now();
+                this._planetIdCounter++;
+                const planetId = this._planetIdCounter;
+
                 const planet = {
-                    id: Date.now() + Math.random(),
+                    id: planetId,
                     name: this.generatePlanetName(),
                     type: planetType,
                     position: {
@@ -13415,15 +13424,16 @@ const SHIP_IMAGE_DATA = {
                     },
                     resources: {
                         metal: Math.max(100, baseMetal + modifiers.metal),
-                        he3: Math.max(100, baseHE3 + modifiers.he3),
-                        food: Math.max(100, baseFood + modifiers.food)
+                        he3:   Math.max(100, baseHE3   + modifiers.he3),
+                        food:  Math.max(100, baseFood  + modifiers.food)
                     },
                     population: Math.max(50, basePopulation + modifiers.population),
                     buildings: {},
-                    owner: null,
-                    inCluster: false
+                    owner:     null,
+                    inCluster: false,
+                    scouted:   false  // will be set true when found via scoutNewPlanet
                 };
-                
+
                 this.planets.push(planet);
                 return planet;
             }
@@ -13448,52 +13458,54 @@ const SHIP_IMAGE_DATA = {
             }
             
             scoutNewPlanet() {
-                const MAX_OWNED_PLANETS = 100000; // 100k planet limit
+                const MAX_OWNED_PLANETS = 100000;
                 const ownedPlanets = this.planets.filter(p => p.owner === this.selectedRace.name);
-                
+
                 if (ownedPlanets.length >= MAX_OWNED_PLANETS) {
                     this.showNotification(`⚠️ Maximum planet limit reached (${MAX_OWNED_PLANETS})!`);
                     return;
                 }
-                
-                // Scale cost and time based on planet count (distance)
-                const baseCost = 1000;
-                const baseHE3 = 200;
+
+                const baseCost   = 1000;
+                const baseHE3    = 200;
                 const planetCount = this.planets.length;
-                
-                // Credit cost reduced by 40% (multiply by 0.6)
+
                 const scaledCredits = Math.floor((baseCost + (planetCount * 100)) * 0.6);
-                const scaledHE3 = baseHE3 + (planetCount * 20);
-                const scoutingTime = Math.floor(5 + (planetCount * 0.5)); // 5 seconds base + 0.5s per planet
-                
-                if (this.resources.credits >= scaledCredits && this.resources.he3 >= scaledHE3) {
-                    this.resources.credits -= scaledCredits;
-                    this.resources.he3 -= scaledHE3;
-                    this.updateResources();
-                    
-                    this.showNotification(`🔭 Scouting... (${scoutingTime}s - Distance: ${planetCount} sectors)`);
-                    
-                    setTimeout(() => {
-                        // Check for random space event (1% chance)
-                        if (this.checkSpaceEvent('scout')) {
-                            // Event already handled - scout ships lost, notification shown
-                            return;
-                        }
-                        
-                        const planet = this.addRandomPlanet();
-                        this.renderPlanets();
-                        this.renderAvailablePlanets();
-                        this.updateMap();
-                        this.showNotification(`✨ New planet discovered: ${planet.name}!`);
-                        
-                        // Check for commander drop (1.5% total chance)
-                        if (this.commanderManager) {
-                            this.commanderManager.checkCommanderDrop();
-                        }
-                    }, scoutingTime * 1000);
-                } else {
-                    this.showNotification(`Insufficient resources! Need ₡${scaledCredits.toLocaleString()} and ⚡${scaledHE3.toLocaleString()}`);
+                const scaledHE3     = baseHE3 + (planetCount * 20);
+                // Cap scouting time at 15s max — prevents excessively long waits
+                const scoutingTime  = Math.min(15, Math.floor(5 + (planetCount * 0.5)));
+
+                if (this.resources.credits < scaledCredits || this.resources.he3 < scaledHE3) {
+                    this.showNotification(`⚠️ Need ₡${scaledCredits.toLocaleString()} and ⚡${scaledHE3.toLocaleString()} to scout!`);
+                    return;
                 }
+
+                this.resources.credits -= scaledCredits;
+                this.resources.he3     -= scaledHE3;
+                this.updateResources();
+
+                this.showNotification(`🔭 Scouting... (${scoutingTime}s)`);
+
+                setTimeout(() => {
+                    // Check for random space event (1% chance)
+                    if (this.checkSpaceEvent('scout')) return;
+
+                    const planet  = this.addRandomPlanet();
+                    planet.scouted = true; // mark as player-discovered
+
+                    this.renderPlanets();
+                    this.renderAvailablePlanets();
+                    this.updateMap();
+
+                    // Always switch to Available tab so the player sees the new planet immediately
+                    this.switchPlanetTab('available');
+
+                    this.showNotification(`✨ ${planet.name} discovered! Switch to the Available tab to colonize.`);
+
+                    if (this.commanderManager) {
+                        this.commanderManager.checkCommanderDrop();
+                    }
+                }, scoutingTime * 1000);
             }
             
             checkSpaceEvent(travelType = 'attack', fleet = null) {
@@ -13795,13 +13807,14 @@ const SHIP_IMAGE_DATA = {
             
             renderAvailablePlanets() {
                 const list = document.getElementById('availablePlanetList');
+                if (!list) return;
                 const availablePlanets = this.planets.filter(p => !p.owner).sort((a, b) => a.name.localeCompare(b.name));
-                
+
                 if (availablePlanets.length === 0) {
-                    list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No available planets to colonize</div>';
+                    list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No available planets. Scout new planets to expand your empire.</div>';
                     return;
                 }
-                
+
                 list.innerHTML = availablePlanets.map(planet => this.renderPlanetCard(planet, 'available')).join('');
             }
             
@@ -14028,7 +14041,7 @@ const SHIP_IMAGE_DATA = {
                         ⚔️ Attack
                     </button>`;
                 } else {
-                    button = `<button onclick="event.stopPropagation(); game.claimPlanet(${planet.id})" 
+                    button = `<button onclick="event.stopPropagation(); game.claimPlanet(${Number(planet.id)})" 
                         style="margin-top: 4px; width: 100%; padding: 3px; background: rgba(0, 255, 136, 0.1); border: 1px solid var(--accent-secondary); border-radius: 3px; color: var(--accent-secondary); font-size: 9px; cursor: pointer; font-weight: 700;">
                         🪐 Colonize
                     </button>`;
@@ -14906,14 +14919,27 @@ const SHIP_IMAGE_DATA = {
             
             claimPlanet(planetId) {
                 const MAX_OWNED_PLANETS = 100000;
-                const planet = this.planets.find(p => p.id === planetId);
-                if (!planet || planet.owner) {
-                    // Planet already claimed or gone — just refresh the available list
+
+                // Cast to number — IDs from onclick attrs arrive as numbers but
+                // old save data may have stored them as floats; normalise both sides
+                const numId  = Number(planetId);
+                const planet = this.planets.find(p => Number(p.id) === numId);
+
+                if (!planet) {
+                    // Planet gone — refresh list so stale card disappears
                     this.renderAvailablePlanets();
+                    this.showNotification('⚠️ That planet is no longer available.');
                     return;
                 }
 
-                const ownedCount = this.planets.filter(p => p.owner === this.selectedRace.name).length;
+                if (planet.owner) {
+                    // Already claimed (e.g. a bot grabbed it while it was in the list)
+                    this.renderAvailablePlanets();
+                    this.showNotification(`⚠️ ${planet.name} was claimed by ${planet.owner} before you arrived.`);
+                    return;
+                }
+
+                const ownedCount  = this.planets.filter(p => p.owner === this.selectedRace.name).length;
                 if (ownedCount >= MAX_OWNED_PLANETS) {
                     this.showNotification(`⚠️ Maximum planet limit reached (${MAX_OWNED_PLANETS})!`);
                     return;
@@ -14925,19 +14951,20 @@ const SHIP_IMAGE_DATA = {
                 if (this.resources.credits >= claimCost && this.resources.he3 >= he3Cost) {
                     this.resources.credits -= claimCost;
                     this.resources.he3     -= he3Cost;
-                    planet.owner = this.selectedRace.name;
-                    planet.ownerUsername = this.playerData?.username || this.selectedRace.name;
+                    planet.owner           = this.selectedRace.name;
+                    planet.ownerUsername   = this.playerData?.username || this.selectedRace.name;
+                    planet.scouted         = true;
                     this.resources.population += planet.population || 0;
                     this.updateResources();
                     this.updateMap();
-                    this.showNotification(`✅ ${planet.name} claimed! (+${planet.population || 0} population)`);
+                    this.showNotification(`✅ ${planet.name} colonized! (+${(planet.population||0).toLocaleString()} population)`);
 
-                    // Refresh both panels immediately — no animation that can freeze
+                    // Refresh all three panels immediately
                     this.renderPlanets();
                     this.renderAvailablePlanets();
                     this.renderOwnedPlanets();
                 } else {
-                    this.showNotification(`⚠️ Need ₡${claimCost.toLocaleString()} and ⚡${he3Cost} to claim!`);
+                    this.showNotification(`⚠️ Need ₡${claimCost.toLocaleString()} and ⚡${he3Cost.toLocaleString()} to colonize!`);
                 }
             }
             
