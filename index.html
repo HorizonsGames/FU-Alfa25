@@ -9418,7 +9418,8 @@
 
             botClaimPlanet(bot, gs) {
                 if (typeof game === 'undefined' || !game.planets) return;
-                const unclaimed = game.planets.filter(p => !p.owner);
+                // Never steal planets the player has scouted — they belong to the player's pipeline
+                const unclaimed = game.planets.filter(p => !p.owner && !p.scouted);
                 if (unclaimed.length === 0 || Math.random() > 0.4) return;
                 const planet = unclaimed[Math.floor(Math.random() * unclaimed.length)];
                 planet.owner           = bot.username;
@@ -13668,6 +13669,7 @@ const SHIP_IMAGE_DATA = {
                     
                     return `
                         <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}" 
+                             data-planet-id="${planet.id}"
                              onclick="window.game.selectPlanetForBuilding(game.planets.find(p => p.id === ${planet.id})); game.selectPlanet(game.planets.find(p => p.id === ${planet.id}));"
                              onmouseenter="game.showPlanetImageModal('${planet.type}')"
                              onmouseleave="game.hidePlanetImageModal()"
@@ -14051,6 +14053,7 @@ const SHIP_IMAGE_DATA = {
                 const viralPlanetStyle = (isOwned && isViral) ? 'box-shadow: 0 0 12px rgba(139,0,0,0.5); background: linear-gradient(135deg, rgba(50,0,0,0.6), var(--bg-tertiary));' : '';
                 return `
                     <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}" 
+                         data-planet-id="${planet.id}"
                          onclick="window.game.selectPlanetForBuilding(game.planets.find(p => p.id === ${planet.id})); game.selectPlanet(game.planets.find(p => p.id === ${planet.id}));"
                          onmouseenter="game.showPlanetImageModal('${planet.type}')"
                          onmouseleave="game.hidePlanetImageModal()"
@@ -14959,10 +14962,29 @@ const SHIP_IMAGE_DATA = {
                     this.updateMap();
                     this.showNotification(`✅ ${planet.name} colonized! (+${(planet.population||0).toLocaleString()} population)`);
 
-                    // Refresh all three panels immediately
-                    this.renderPlanets();
-                    this.renderAvailablePlanets();
-                    this.renderOwnedPlanets();
+                    // Play claim animation on the card, then re-render after it finishes
+                    const claimCard = document.querySelector(
+                        `#availablePlanetList .planet-card[data-planet-id="${numId}"]`
+                    );
+                    if (claimCard) {
+                        // Phase 1: spin-shrink the card (0.75s)
+                        claimCard.classList.add('claiming');
+                        setTimeout(() => {
+                            // Phase 2: collapse height so cards below slide up (0.35s)
+                            claimCard.classList.remove('claiming');
+                            claimCard.classList.add('collapsing');
+                            setTimeout(() => {
+                                // Phase 3: re-render with remaining planets already in position
+                                this.renderPlanets();
+                                this.renderAvailablePlanets();
+                                this.renderOwnedPlanets();
+                            }, 380);
+                        }, 750);
+                    } else {
+                        this.renderPlanets();
+                        this.renderAvailablePlanets();
+                        this.renderOwnedPlanets();
+                    }
                 } else {
                     this.showNotification(`⚠️ Need ₡${claimCost.toLocaleString()} and ⚡${he3Cost.toLocaleString()} to colonize!`);
                 }
@@ -18135,6 +18157,8 @@ const SHIP_IMAGE_DATA = {
                     this.renderOwnedPlanets();
                 } else if (tab === 'available') {
                     this.renderAvailablePlanets();
+                    const lp = document.querySelector('.left-panel');
+                    if (lp) lp.scrollTop = 0;
                 } else if (tab === 'enemy') {
                     this.renderEnemyPlanets();
                 } else if (tab === 'clusters') {
@@ -23285,6 +23309,15 @@ const SHIP_IMAGE_DATA = {
             animation: claimRing 0.75s ease-out forwards;
             pointer-events: none;
             z-index: 20;
+        }
+        @keyframes collapseCard {
+            0%   { max-height: 300px; margin-bottom: 12px; opacity: 0; padding-top: 14px; padding-bottom: 14px; }
+            100% { max-height: 0;     margin-bottom: 0;    opacity: 0; padding-top: 0;    padding-bottom: 0; }
+        }
+        .planet-card.collapsing {
+            animation: collapseCard 0.35s ease-in forwards;
+            pointer-events: none;
+            overflow: hidden;
         }
         .claim-ring {
             position: absolute;
