@@ -13749,9 +13749,10 @@ const SHIP_IMAGE_DATA = {
                     const hasBuildings = planet.buildings && Object.values(planet.buildings).some(level => level > 0);
                     const buildingCount = hasBuildings ? Object.values(planet.buildings).reduce((sum, level) => sum + level, 0) : 0;
                     const isOwned = planet.owner === this.selectedRace.name;
+                    const isUnderSiege = planet.siegedBy && planet.siegedUntil > Date.now();
                     
                     return `
-                        <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}" 
+                        <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}${isUnderSiege ? ' under-siege' : ''}" 
                              data-planet-id="${planet.id}"
                              onclick="window.game.selectPlanetForBuilding(game.planets.find(p => p.id === ${planet.id})); game.selectPlanet(game.planets.find(p => p.id === ${planet.id}));"
                              onmouseenter="game.showPlanetImageModal('${planet.type}')"
@@ -13764,7 +13765,7 @@ const SHIP_IMAGE_DATA = {
                             ${planet.owner && !isOwned ? `<div style="font-size: 10.8px; color: var(--accent-danger); margin: 2px 0;">⚠️ ${planet.owner}</div>` : ''}
                             ${isUnderSiege ? `<div class="siege-badge">🔒 UNDER SIEGE</div>` : ''}
                             ${isOwned ? (() => {
-                                const ti = game.getPlanetTierInfo(planet);
+                                const ti = this.getPlanetTierInfo(planet);
                                 const tierColors = { 1:'#4a9eff', 2:'#00ff88', 3:'#ffaa4a', 4:'#ffd700' };
                                 const pct = Math.min(100, ti.progress);
                                 const nextLabel = ti.nextTierAt ? `→ Tier ${ti.tier+1} at ${ti.nextTierAt} bldgs` : 'MAX TIER';
@@ -14711,11 +14712,11 @@ const SHIP_IMAGE_DATA = {
             _relicWorldNames() {
                 return [
                     { name: 'Ur-Kashan',      lore: 'Cradle of the Ancients'     },
-                    { name: 'Vel'Naris',      lore: 'The Shattered Throne'       },
+                    { name: 'Vel\'Naris',     lore: 'The Shattered Throne'       },
                     { name: 'Sorveth Prime',   lore: 'The Last Beacon'            },
                     { name: 'Aetherion',       lore: 'Tomb of the First Council'  },
                     { name: 'Kael-Dun',        lore: 'Forge-World of Old Gods'    },
-                    { name: 'Nexara's Rest',  lore: 'Where Stars Go to Die'      },
+                    { name: 'Nexara\'s Rest', lore: 'Where Stars Go to Die'      },
                     { name: 'Drevan Hollow',   lore: 'The Whispering Ruins'       },
                     { name: 'Ossion IV',       lore: 'Monument to Extinction'     },
                     { name: 'Thyra Ascendant', lore: 'The Risen Archive'          },
