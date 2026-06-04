@@ -4957,6 +4957,11 @@
                     ">0</span>
                 </button>
                 
+                <!-- Constellation Territory Status -->
+                <div class="constellation-panel" id="constellationPanel" style="margin-top:12px;">
+                    <div style="font-size:11px;color:var(--text-secondary);">Loading constellations…</div>
+                </div>
+
                 <div class="planet-list" id="ownedPlanetList"></div>
             </div>
             
@@ -9418,8 +9423,8 @@
 
             botClaimPlanet(bot, gs) {
                 if (typeof game === 'undefined' || !game.planets) return;
-                // Never steal planets the player has scouted — they belong to the player's pipeline
-                const unclaimed = game.planets.filter(p => !p.owner && !p.scouted);
+                // Never steal planets the player has scouted, and never touch relic worlds
+                const unclaimed = game.planets.filter(p => !p.owner && !p.scouted && !p.isRelicWorld);
                 if (unclaimed.length === 0 || Math.random() > 0.4) return;
                 const planet = unclaimed[Math.floor(Math.random() * unclaimed.length)];
                 planet.owner           = bot.username;
@@ -12481,6 +12486,7 @@ const SHIP_IMAGE_DATA = {
                 this.selectedRace = RACES[0];
                 this.planets = [];
                 this.ships = {};
+                this.sieges = []; // active siege operations
                 this.unlockedShips = []; // Special ships unlocked through crafting
                 this.capturedShips = {};
                 this.reverseEngineered = {};
@@ -12680,6 +12686,21 @@ const SHIP_IMAGE_DATA = {
                         this.fleets = playerData.gameState.fleets;
                     }
                     
+                    if (playerData.gameState.sieges) {
+                        this.sieges = playerData.gameState.sieges;
+                    }
+
+                    // Restore relic unlock progress on planets that are already in the world
+                    if (playerData.gameState.relicWorlds) {
+                        playerData.gameState.relicWorlds.forEach(rw => {
+                            const planet = this.planets.find(p => Number(p.id) === Number(rw.id));
+                            if (planet) {
+                                planet.relicUnlockStep = rw.relicUnlockStep || 0;
+                                planet.relicExpiresAt  = rw.relicExpiresAt;
+                            }
+                        });
+                    }
+                    
                     if (playerData.gameState.researchQueue) {
                         this.researchQueue = playerData.gameState.researchQueue;
                         console.log(`🔬 Loaded ${this.researchQueue.length} research items`);
@@ -12806,6 +12827,11 @@ const SHIP_IMAGE_DATA = {
                     guildName: this.guildName || 'Galactic Pioneers',
                     temporaryBonuses: this.temporaryBonuses || [],
                     unlockedShips: this.unlockedShips || [],
+                    sieges: this.sieges || [],
+                    relicWorlds: this.planets.filter(p => p.isRelicWorld).map(p => ({
+                        id: p.id, relicUnlockStep: p.relicUnlockStep || 0,
+                        relicExpiresAt: p.relicExpiresAt
+                    })),
                     worldBoss: this.worldBoss || null,
                     traxis: this.traxis ? {
                         isActive:      this.traxis.isActive,
@@ -12857,6 +12883,9 @@ const SHIP_IMAGE_DATA = {
                     
                     console.log('🗺️ Step 9: updateMap');
                     this.updateMap();
+
+                    // Spawn relic worlds on first load (delayed so planets array is ready)
+                    setTimeout(() => this.spawnRelicWorlds(), 3000);
                     
                     console.log('💎 Step 10: updateResources');
                     this.updateResources();
@@ -13278,6 +13307,9 @@ const SHIP_IMAGE_DATA = {
                     }
                 });
                 
+                // Draw constellation territory overlays (behind grid and planets)
+                this.drawConstellations(ctx, centerX, centerY);
+
                 // Draw grid
                 ctx.strokeStyle = 'rgba(0, 217, 255, 0.1)';
                 ctx.lineWidth = 1;
@@ -13353,11 +13385,62 @@ const SHIP_IMAGE_DATA = {
                         ctx.beginPath();
                         ctx.arc(x, y - 15, 3, 0, Math.PI * 2);
                         ctx.fill();
+
+                        // Relic world glow (unowned) — purple aura
+                        if (planet.isRelicWorld && !planet.owner) {
+                            const pulse = 0.5 + 0.35 * Math.sin(Date.now() / 800);
+                            const relicGrad = ctx.createRadialGradient(x, y, 0, x, y, 18);
+                            relicGrad.addColorStop(0,   `rgba(168,85,247,${pulse * 0.5})`);
+                            relicGrad.addColorStop(0.6, `rgba(168,85,247,${pulse * 0.2})`);
+                            relicGrad.addColorStop(1,   'rgba(168,85,247,0)');
+                            ctx.fillStyle = relicGrad;
+                            ctx.beginPath();
+                            ctx.arc(x, y, 18, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.strokeStyle = `rgba(168,85,247,${pulse})`;
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.arc(x, y, 14, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+
+                        // Tier ring — drawn only for owned planets with Tier 2+
+                        if (planet.owner === this.selectedRace?.name && planet.buildings) {
+                            const ti = this.getPlanetTierInfo(planet);
+                            if (ti.tier >= 2) {
+                                const tierRingColors = { 2: '#00ff88', 3: '#ffaa4a', 4: '#ffd700' };
+                                const tierRingRadii  = { 2: 11, 3: 13, 4: 15 };
+                                const ringColor = tierRingColors[ti.tier];
+                                const ringRadius = tierRingRadii[ti.tier];
+                                ctx.strokeStyle = ringColor;
+                                ctx.lineWidth = ti.tier === 4 ? 2.5 : 1.5;
+                                ctx.globalAlpha = ti.tier === 4 ? 0.9 : 0.6;
+                                ctx.beginPath();
+                                ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
+                                ctx.stroke();
+                                ctx.globalAlpha = 1;
+                                // Tier IV gets a second pulsing outer ring
+                                if (ti.tier === 4) {
+                                    const pulse = 0.4 + 0.3 * Math.sin(Date.now() / 500);
+                                    ctx.strokeStyle = '#ffd700';
+                                    ctx.lineWidth = 1;
+                                    ctx.globalAlpha = pulse;
+                                    ctx.beginPath();
+                                    ctx.arc(x, y, 19, 0, Math.PI * 2);
+                                    ctx.stroke();
+                                    ctx.globalAlpha = 1;
+                                }
+                            }
+                        }
                     }
                 });
             }
             
             updateMap() {
+                // Refresh constellation panel whenever map updates (ownership changes)
+                if (document.getElementById('constellationPanel')) {
+                    this.renderConstellationPanel();
+                }
                 // Only start animation if game is initialized and canvas exists
                 if (!this.canvas || !this.ctx) {
                     console.warn('Canvas not ready, skipping map update');
@@ -13679,6 +13762,16 @@ const SHIP_IMAGE_DATA = {
                             <div class="planet-type" style="font-size: 12.15px;">${planet.type}</div>
                             ${isOwned ? `<div style="font-size: 10.8px; color: var(--accent-secondary); font-weight: 700; margin: 2px 0;">★ OWNED</div>` : ''}
                             ${planet.owner && !isOwned ? `<div style="font-size: 10.8px; color: var(--accent-danger); margin: 2px 0;">⚠️ ${planet.owner}</div>` : ''}
+                            ${isUnderSiege ? `<div class="siege-badge">🔒 UNDER SIEGE</div>` : ''}
+                            ${isOwned ? (() => {
+                                const ti = game.getPlanetTierInfo(planet);
+                                const tierColors = { 1:'#4a9eff', 2:'#00ff88', 3:'#ffaa4a', 4:'#ffd700' };
+                                const pct = Math.min(100, ti.progress);
+                                const nextLabel = ti.nextTierAt ? `→ Tier ${ti.tier+1} at ${ti.nextTierAt} bldgs` : 'MAX TIER';
+                                return `<div class="tier-badge tier-${ti.tier}">${ti.bonus.icon} Tier ${ti.bonus.label} &nbsp;+${Math.round((ti.bonus.production-1)*100)}% prod</div>
+                                        <div class="tier-progress-bar"><div class="tier-progress-fill" style="width:${pct}%;background:${tierColors[ti.tier]};"></div></div>
+                                        <div style="font-size:8px;color:var(--text-secondary);margin-top:2px;">${nextLabel} (${ti.buildingTotal} now)</div>`;
+                            })() : ''}
                             ${planet.population ? `<div style="font-size: 12.15px; color: var(--text-primary); margin: 1px 0;">👥 ${planet.population.toLocaleString()}</div>` : ''}
                             ${hasBuildings ? `<div style="font-size: 12.15px; color: var(--accent-secondary); margin: 1px 0;">🏗️ ${buildingCount}</div>` : ''}
                             <div class="planet-resources" style="margin-top: 2px; font-size: 12.15px;">
@@ -13695,6 +13788,10 @@ const SHIP_IMAGE_DATA = {
                                 `<button onclick="event.stopPropagation(); game.attackPlanet(${planet.id})" 
                                     style="margin-top: 4px; width: 100%; padding: 3px; background: rgba(255, 136, 0, 0.1); border: 1px solid #ff8800; border-radius: 3px; color: #ff8800; font-size: 9px; cursor: pointer; font-weight: 700;">
                                     ⚔️ Attack
+                                </button>
+                                <button onclick="event.stopPropagation(); game.initiateSiege(${planet.id})" 
+                                    style="margin-top: 3px; width: 100%; padding: 3px; background: rgba(255, 51, 0, 0.1); border: 1px solid #cc4400; border-radius: 3px; color: #ff6622; font-size: 9px; cursor: pointer; font-weight: 700;">
+                                    🔒 Siege
                                 </button>`
                             : `<button onclick="event.stopPropagation(); game.claimPlanet(${planet.id})" 
                                     style="margin-top: 4px; width: 100%; padding: 3px; background: rgba(0, 255, 136, 0.1); border: 1px solid var(--accent-secondary); border-radius: 3px; color: var(--accent-secondary); font-size: 9px; cursor: pointer; font-weight: 700;">
@@ -13805,19 +13902,26 @@ const SHIP_IMAGE_DATA = {
                 }
                 
                 list.innerHTML = html;
+                this.renderConstellationPanel();
             }
             
             renderAvailablePlanets() {
                 const list = document.getElementById('availablePlanetList');
                 if (!list) return;
-                const availablePlanets = this.planets.filter(p => !p.owner).sort((a, b) => a.name.localeCompare(b.name));
 
-                if (availablePlanets.length === 0) {
+                // Relic worlds — always shown at top, regardless of scouted state
+                const relicPlanets     = this.planets.filter(p => p.isRelicWorld && !p.owner);
+                const availablePlanets = this.planets.filter(p => p.scouted && !p.owner && !p.isRelicWorld)
+                                             .sort((a, b) => a.name.localeCompare(b.name));
+
+                if (relicPlanets.length === 0 && availablePlanets.length === 0) {
                     list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No available planets. Scout new planets to expand your empire.</div>';
                     return;
                 }
 
-                list.innerHTML = availablePlanets.map(planet => this.renderPlanetCard(planet, 'available')).join('');
+                const relicHtml = relicPlanets.map(p => this.renderRelicCard(p)).join('');
+                const availHtml = availablePlanets.map(planet => this.renderPlanetCard(planet, 'available')).join('');
+                list.innerHTML  = relicHtml + availHtml;
             }
             
             renderEnemyPlanets() {
@@ -14041,6 +14145,10 @@ const SHIP_IMAGE_DATA = {
                     button = `<button onclick="event.stopPropagation(); game.prepareAttack(${planet.id})" 
                         style="margin-top: 4px; width: 100%; padding: 3px; background: rgba(255, 136, 0, 0.1); border: 1px solid #ff8800; border-radius: 3px; color: #ff8800; font-size: 9px; cursor: pointer; font-weight: 700;">
                         ⚔️ Attack
+                    </button>
+                    <button onclick="event.stopPropagation(); game.initiateSiege(${planet.id})" 
+                        style="margin-top: 3px; width: 100%; padding: 3px; background: rgba(255, 51, 0, 0.1); border: 1px solid #cc4400; border-radius: 3px; color: #ff6622; font-size: 9px; cursor: pointer; font-weight: 700;">
+                        🔒 Siege
                     </button>`;
                 } else {
                     button = `<button onclick="event.stopPropagation(); game.claimPlanet(${Number(planet.id)})" 
@@ -14051,8 +14159,10 @@ const SHIP_IMAGE_DATA = {
                 
                 const isViral = this.selectedRace && this.selectedRace.name === 'The Viral Race';
                 const viralPlanetStyle = (isOwned && isViral) ? 'box-shadow: 0 0 12px rgba(139,0,0,0.5); background: linear-gradient(135deg, rgba(50,0,0,0.6), var(--bg-tertiary));' : '';
+                const isUnderSiege = planet.siegedBy && planet.siegedUntil > Date.now();
+                const siegeExtraClass = isUnderSiege ? ' under-siege' : '';
                 return `
-                    <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}" 
+                    <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}${siegeExtraClass}" 
                          data-planet-id="${planet.id}"
                          onclick="window.game.selectPlanetForBuilding(game.planets.find(p => p.id === ${planet.id})); game.selectPlanet(game.planets.find(p => p.id === ${planet.id}));"
                          onmouseenter="game.showPlanetImageModal('${planet.type}')"
@@ -14589,6 +14699,805 @@ const SHIP_IMAGE_DATA = {
                 }, travelTime * 1000);
             }
             
+
+
+
+
+            // ═══════════════════════════════════════════════
+            //  RELIC WORLD SYSTEM
+            // ═══════════════════════════════════════════════
+
+            // Relic world names and lore labels
+            _relicWorldNames() {
+                return [
+                    { name: 'Ur-Kashan',      lore: 'Cradle of the Ancients'     },
+                    { name: 'Vel'Naris',      lore: 'The Shattered Throne'       },
+                    { name: 'Sorveth Prime',   lore: 'The Last Beacon'            },
+                    { name: 'Aetherion',       lore: 'Tomb of the First Council'  },
+                    { name: 'Kael-Dun',        lore: 'Forge-World of Old Gods'    },
+                    { name: 'Nexara's Rest',  lore: 'Where Stars Go to Die'      },
+                    { name: 'Drevan Hollow',   lore: 'The Whispering Ruins'       },
+                    { name: 'Ossion IV',       lore: 'Monument to Extinction'     },
+                    { name: 'Thyra Ascendant', lore: 'The Risen Archive'          },
+                    { name: 'Cael-Morath',     lore: 'Heart of the Dead Empire'   },
+                ];
+            }
+
+            // Spawn 3 relic worlds at server start / weekly reset
+            spawnRelicWorlds() {
+                if (!this._planetIdCounter) this._planetIdCounter = Date.now();
+
+                // Remove any expired relic worlds (unclaimed, past their expiry)
+                this.planets = this.planets.filter(p => {
+                    if (!p.isRelicWorld) return true;
+                    if (p.owner) return true; // claimed — keep forever
+                    const expired = p.relicExpiresAt && Date.now() > p.relicExpiresAt;
+                    return !expired;
+                });
+
+                // How many active unclaimed relic worlds exist?
+                const activeRelics = this.planets.filter(p => p.isRelicWorld && !p.owner).length;
+                const toSpawn = Math.max(0, 3 - activeRelics);
+
+                const names = this._relicWorldNames();
+                const usedNames = new Set(this.planets.filter(p => p.isRelicWorld).map(p => p.name));
+                const available = names.filter(n => !usedNames.has(n.name));
+
+                for (let i = 0; i < toSpawn && available.length > 0; i++) {
+                    const pick = available.splice(Math.floor(Math.random() * available.length), 1)[0];
+
+                    this._planetIdCounter++;
+                    const relicPlanet = {
+                        id: this._planetIdCounter,
+                        name: pick.name,
+                        lore: pick.lore,
+                        type: 'Balanced', // visually rich type
+                        isRelicWorld: true,
+                        relicUnlockStep: 0, // 0=none, 1=scouted, 2=excavated, 3=decrypted(=claimable)
+                        relicExpiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+                        // Pre-built Ancient structures
+                        buildings: {
+                            'Mining Complex':  3,
+                            'Science Lab':     2,
+                            'City Dome':       2,
+                            'Research Outpost':1,
+                        },
+                        // 4× normal resources
+                        resources: {
+                            metal: 18000 + Math.floor(Math.random() * 6000),
+                            he3:   12000 + Math.floor(Math.random() * 4000),
+                            food:  15000 + Math.floor(Math.random() * 5000),
+                        },
+                        population: 4000 + Math.floor(Math.random() * 2000),
+                        position: {
+                            x: Math.random() * 700 - 350,
+                            y: Math.random() * 500 - 250,
+                        },
+                        owner:    null,
+                        scouted:  false,
+                        inCluster: false,
+                    };
+                    this.planets.push(relicPlanet);
+                }
+
+                if (toSpawn > 0) {
+                    this.updateMap();
+                    this.renderAvailablePlanets();
+                    chatManager.addMessage('SYSTEM', `🔮 ANCIENT DETECTION: ${toSpawn} Relic World${toSpawn > 1 ? 's have' : ' has'} been detected in deep space. Scouting parties report unusual energy readings…`, 'system');
+                }
+
+                // Schedule next weekly check (7 days)
+                this._relicRespawnTimer = setTimeout(() => this.spawnRelicWorlds(), 7 * 24 * 60 * 60 * 1000);
+            }
+
+            // Step 1 of 3: Scout the relic (called from scout button on the card)
+            relicScout(planetId) {
+                const planet = this.planets.find(p => Number(p.id) === Number(planetId));
+                if (!planet || !planet.isRelicWorld) return;
+                if (planet.relicUnlockStep >= 1) { this.showNotification('✅ System already scouted.'); return; }
+
+                const he3Cost = 500;
+                const creditCost = 2000;
+                if (this.resources.he3 < he3Cost || this.resources.credits < creditCost) {
+                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + ⚡${he3Cost.toLocaleString()} HE3 to scout this system.`);
+                    return;
+                }
+
+                this.resources.he3 -= he3Cost;
+                this.resources.credits -= creditCost;
+                this.updateResources();
+                this.showNotification(`🔭 Scouting ${planet.name}… (30s)`);
+
+                setTimeout(() => {
+                    planet.relicUnlockStep = 1;
+                    planet.scouted = true;
+                    this.showNotification(`📡 ${planet.name} scanned! Ancient structures confirmed. Begin excavation.`);
+                    this.renderAvailablePlanets();
+                    this.saveGameState();
+                }, 30000);
+            }
+
+            // Step 2 of 3: Excavate the ruins
+            relicExcavate(planetId) {
+                const planet = this.planets.find(p => Number(p.id) === Number(planetId));
+                if (!planet || !planet.isRelicWorld) return;
+                if (planet.relicUnlockStep < 1) { this.showNotification('⚠️ Scout the system first.'); return; }
+                if (planet.relicUnlockStep >= 2) { this.showNotification('✅ Excavation already complete.'); return; }
+
+                const he3Cost = 1500;
+                const metalCost = 5000;
+                const creditCost = 8000;
+                if (this.resources.he3 < he3Cost || this.resources.metal < metalCost || this.resources.credits < creditCost) {
+                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + ⚡${he3Cost.toLocaleString()} HE3 + 🔩${metalCost.toLocaleString()} metal to excavate.`);
+                    return;
+                }
+
+                this.resources.he3     -= he3Cost;
+                this.resources.metal   -= metalCost;
+                this.resources.credits -= creditCost;
+                this.updateResources();
+                this.showNotification(`⛏️ Excavating ${planet.name}… (90s)`);
+
+                setTimeout(() => {
+                    planet.relicUnlockStep = 2;
+                    this.showNotification(`🏛️ Ruins exposed on ${planet.name}! Decrypt the data cores to claim it.`);
+                    this.renderAvailablePlanets();
+                    this.saveGameState();
+                }, 90000);
+            }
+
+            // Step 3 of 3: Decrypt — makes the planet claimable via normal claimPlanet
+            relicDecrypt(planetId) {
+                const planet = this.planets.find(p => Number(p.id) === Number(planetId));
+                if (!planet || !planet.isRelicWorld) return;
+                if (planet.relicUnlockStep < 2) { this.showNotification('⚠️ Complete excavation first.'); return; }
+                if (planet.relicUnlockStep >= 3) { this.showNotification('✅ Data cores already decrypted — colonize now!'); return; }
+
+                const rpCost = 500;
+                const creditCost = 15000;
+                if (this.resources.researchPoints < rpCost || this.resources.credits < creditCost) {
+                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + 🔬${rpCost.toLocaleString()} Research Points to decrypt.`);
+                    return;
+                }
+
+                this.resources.researchPoints -= rpCost;
+                this.resources.credits        -= creditCost;
+                this.updateResources();
+                this.showNotification(`🔓 Decrypting ${planet.name} data cores… (60s)`);
+
+                setTimeout(() => {
+                    planet.relicUnlockStep = 3;
+                    this.showNotification(`✨ ${planet.name} UNLOCKED! Colonize it now before someone else does!`);
+                    this.renderAvailablePlanets();
+                    this.saveGameState();
+                    chatManager.addMessage('SYSTEM',
+                        `🔮 ${this.playerData?.username || this.selectedRace?.name} has cracked the data cores of a Relic World — colonization imminent!`,
+                        'system');
+                }, 60000);
+            }
+
+            // Render the relic world card (injected into renderPlanetCard for available tab)
+            renderRelicCard(planet) {
+                const step = planet.relicUnlockStep || 0;
+                const steps = [
+                    { label: '1. Scout System',     cost: '₡2,000 + ⚡500',              complete: step >= 1 },
+                    { label: '2. Excavate Ruins',   cost: '₡8,000 + ⚡1,500 + 🔩5,000',  complete: step >= 2 },
+                    { label: '3. Decrypt Cores',    cost: '₡15,000 + 🔬500 RP',           complete: step >= 3 },
+                ];
+
+                const expires = planet.relicExpiresAt
+                    ? (() => {
+                        const ms = Math.max(0, planet.relicExpiresAt - Date.now());
+                        const d  = Math.floor(ms / 86400000);
+                        const h  = Math.floor((ms % 86400000) / 3600000);
+                        return `${d}d ${h}h`;
+                      })()
+                    : '?';
+
+                const stepsHtml = steps.map((s, i) => {
+                    const cls = s.complete ? 'complete' : (i === step ? 'active' : 'locked');
+                    const icon = s.complete ? '✅' : (i === step ? '🔵' : '🔒');
+                    return `<div class="relic-step ${cls}">
+                        ${icon} <strong>${s.label}</strong>
+                        ${!s.complete ? `<span style="color:var(--text-secondary);font-size:10px;margin-left:4px;">${s.cost}</span>` : ''}
+                    </div>`;
+                }).join('');
+
+                let actionBtn = '';
+                if (step === 0) {
+                    actionBtn = `<button class="relic-unlock-btn" onclick="event.stopPropagation(); game.relicScout(${planet.id})">🔭 Scout System</button>`;
+                } else if (step === 1) {
+                    actionBtn = `<button class="relic-unlock-btn" onclick="event.stopPropagation(); game.relicExcavate(${planet.id})">⛏️ Excavate Ruins</button>`;
+                } else if (step === 2) {
+                    actionBtn = `<button class="relic-unlock-btn" onclick="event.stopPropagation(); game.relicDecrypt(${planet.id})">🔓 Decrypt Cores</button>`;
+                } else if (step === 3) {
+                    actionBtn = `<button class="relic-unlock-btn" onclick="event.stopPropagation(); game.claimPlanet(${planet.id})" style="border-color:#ffd700;color:#ffd700;background:rgba(255,215,0,0.15);">⭐ Colonize Relic World</button>`;
+                }
+
+                const planetImage = PLANET_IMAGE_DATA?.[planet.type] || '';
+
+                return `
+                    <div class="planet-card relic-card" data-planet-id="${planet.id}">
+                        ${planetImage ? `<img src="${planetImage}" class="planet-image" style="height:40px;margin-bottom:4px;">` : ''}
+                        <div class="planet-name" style="color:#c084fc;font-size:14px;">${planet.name}</div>
+                        <div style="font-size:9px;color:#a855f7;margin-bottom:4px;font-style:italic;">${planet.lore || 'Ancient Origin'}</div>
+                        <div class="relic-badge">🔮 RELIC WORLD</div>
+                        <div style="font-size:10px;color:var(--text-secondary);margin:6px 0 4px;">
+                            🔩${planet.resources.metal.toLocaleString()} &nbsp;
+                            ⚡${planet.resources.he3.toLocaleString()} &nbsp;
+                            🌾${planet.resources.food.toLocaleString()}
+                        </div>
+                        <div style="font-size:9px;color:#ffaa4a;margin-bottom:6px;">⏳ Expires in ${expires} &nbsp;|&nbsp; ${planet.buildings ? Object.values(planet.buildings).reduce((s,v)=>s+v,0) : 0} pre-built structures</div>
+                        <div style="margin-bottom:4px;">${stepsHtml}</div>
+                        ${actionBtn}
+                    </div>`;
+            }
+
+            // ═══════════════════════════════════════════════
+            //  CONSTELLATION TERRITORY SYSTEM
+            // ═══════════════════════════════════════════════
+
+            // Fixed constellation zones in world coordinates (x, y, radius)
+            // World space: x in [-400, 400], y in [-300, 300]
+            getConstellations() {
+                return [
+                    { id: 'ardent_belt',     name: 'Ardent Belt',      x: -260, y: -180, radius: 130, color: '#ff6b35', icon: '🔥' },
+                    { id: 'vex_cluster',     name: 'Vex Cluster',      x:  220, y: -150, radius: 120, color: '#a855f7', icon: '⚡' },
+                    { id: 'solaris_reach',   name: 'Solaris Reach',    x:    0, y:  -80, radius: 110, color: '#ffd700', icon: '☀️' },
+                    { id: 'iron_expanse',    name: 'Iron Expanse',     x: -200, y:   80, radius: 115, color: '#94a3b8', icon: '⛏️' },
+                    { id: 'nebula_crown',    name: 'Nebula Crown',     x:  240, y:  120, radius: 120, color: '#06b6d4', icon: '🌌' },
+                    { id: 'darkrift_margin', name: 'Darkrift Margin',  x:   30, y:  200, radius: 100, color: '#f43f5e', icon: '🕳️' },
+                    { id: 'verdant_arc',     name: 'Verdant Arc',      x: -320, y:   10, radius: 105, color: '#22c55e', icon: '🌿' },
+                    { id: 'crystalline_rim', name: 'Crystalline Rim',  x:  340, y:   20, radius: 100, color: '#38bdf8', icon: '💎' },
+                    { id: 'ashen_void',      name: 'Ashen Void',       x: -60,  y:  240, radius: 95,  color: '#78716c', icon: '💀' },
+                    { id: 'gold_nexus',      name: 'Gold Nexus',       x:  100, y: -230, radius: 100, color: '#eab308', icon: '✨' },
+                ];
+            }
+
+            // Find which constellation a planet belongs to (first match)
+            getPlanetConstellation(planet) {
+                for (const c of this.getConstellations()) {
+                    const dx = planet.position.x - c.x;
+                    const dy = planet.position.y - c.y;
+                    if (Math.sqrt(dx*dx + dy*dy) <= c.radius) return c;
+                }
+                return null;
+            }
+
+            // Evaluate which player/NPC controls each constellation (majority ownership)
+            getConstellationControl() {
+                const constellations = this.getConstellations();
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+
+                return constellations.map(c => {
+                    // Count planets inside this zone by owner
+                    const inside = this.planets.filter(p => {
+                        const dx = p.position.x - c.x;
+                        const dy = p.position.y - c.y;
+                        return Math.sqrt(dx*dx + dy*dy) <= c.radius;
+                    });
+
+                    const total = inside.length;
+                    if (total === 0) return { ...c, controller: null, playerCount: 0, total: 0, pct: 0 };
+
+                    // Count by owner
+                    const counts = {};
+                    inside.forEach(p => {
+                        if (p.owner) counts[p.owner] = (counts[p.owner] || 0) + 1;
+                    });
+
+                    // Majority = more than 50% of all planets inside (owned + unowned)
+                    let controller = null;
+                    let maxCount   = 0;
+                    for (const [owner, cnt] of Object.entries(counts)) {
+                        if (cnt > maxCount) { maxCount = cnt; controller = owner; }
+                    }
+
+                    const majority = maxCount / total > 0.5;
+                    const isPlayer = controller === myRace || controller === myUser;
+                    const playerCount = counts[myRace] || counts[myUser] || 0;
+
+                    return {
+                        ...c,
+                        controller: majority ? controller : null,
+                        isPlayerControlled: majority && isPlayer,
+                        playerCount,
+                        total,
+                        pct: Math.round((playerCount / total) * 100),
+                        majority,
+                    };
+                });
+            }
+
+            // +20% production bonus for all player planets inside a controlled constellation
+            getConstellationProductionBonus(planet) {
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+                if (!planet.owner || (planet.owner !== myRace && planet.owner !== myUser)) return 1.0;
+
+                const c = this.getPlanetConstellation(planet);
+                if (!c) return 1.0;
+
+                // Find control info for this constellation
+                const control = this.getConstellationControl().find(cc => cc.id === c.id);
+                if (control && control.isPlayerControlled) return 1.20;
+                return 1.0;
+            }
+
+            // Draw constellation overlays on the canvas
+            drawConstellations(ctx, centerX, centerY) {
+                const control = this.getConstellationControl();
+                const myRace  = this.selectedRace?.name;
+
+                control.forEach(c => {
+                    const sx = centerX + (c.x + this.mapPan.x) * this.mapZoom;
+                    const sy = centerY + (c.y + this.mapPan.y) * this.mapZoom;
+                    const sr = c.radius * this.mapZoom;
+
+                    // Fill — dim if unclaimed, colored if controlled
+                    const alpha = c.controller ? 0.12 : 0.04;
+                    const color = c.controller ? c.color : '#ffffff';
+                    const grad  = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+                    grad.addColorStop(0,   color + Math.floor(alpha * 255).toString(16).padStart(2,'0'));
+                    grad.addColorStop(0.7, color + Math.floor(alpha * 0.4 * 255).toString(16).padStart(2,'0'));
+                    grad.addColorStop(1,   color + '00');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Border ring
+                    ctx.strokeStyle = color + (c.controller ? 'aa' : '33');
+                    ctx.lineWidth   = c.isPlayerControlled ? 2 : 1;
+                    ctx.setLineDash(c.controller ? [] : [6, 5]);
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Label — only when zoomed enough to read
+                    if (this.mapZoom >= 0.5) {
+                        ctx.save();
+                        ctx.globalAlpha = c.controller ? 0.9 : 0.45;
+                        ctx.font = `bold ${Math.max(9, Math.min(13, 11 * this.mapZoom))}px sans-serif`;
+                        ctx.fillStyle = c.controller ? c.color : '#aaaaaa';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(c.icon + ' ' + c.name, sx, sy - sr * 0.65);
+                        if (c.isPlayerControlled) {
+                            ctx.font = `bold ${Math.max(8, Math.min(11, 9 * this.mapZoom))}px sans-serif`;
+                            ctx.fillStyle = '#ffd700';
+                            ctx.fillText('+20% production', sx, sy - sr * 0.65 + 14 * this.mapZoom);
+                        } else if (c.controller) {
+                            ctx.font = `${Math.max(7, Math.min(10, 8 * this.mapZoom))}px sans-serif`;
+                            ctx.fillStyle = '#aaaaaa';
+                            ctx.fillText(c.controller, sx, sy - sr * 0.65 + 13 * this.mapZoom);
+                        }
+                        ctx.restore();
+                    }
+                });
+            }
+
+            // Render constellation status panel inside the Owned tab
+            renderConstellationPanel() {
+                const existing = document.getElementById('constellationPanel');
+                if (!existing) return;
+                const control = this.getConstellationControl();
+                const playerOwned = control.filter(c => c.isPlayerControlled);
+                const contested   = control.filter(c => c.controller && !c.isPlayerControlled);
+                const unclaimed   = control.filter(c => !c.controller);
+
+                existing.innerHTML = `
+                    <div style="font-size:12px;font-weight:700;color:#a855f7;margin-bottom:8px;">🌌 Constellations (${playerOwned.length}/${control.length} controlled)</div>
+                    ${playerOwned.length > 0 ? `
+                        <div style="font-size:10px;color:#ffd700;font-weight:700;margin-bottom:4px;">✅ YOUR ZONES — +20% production active</div>
+                        ${playerOwned.map(c => `
+                            <div class="constellation-row">
+                                <div class="constellation-dot" style="background:${c.color};box-shadow:0 0 5px ${c.color};"></div>
+                                <div class="constellation-name">${c.icon} ${c.name}</div>
+                                <div class="constellation-owner">${c.playerCount}/${c.total} planets</div>
+                                <div class="constellation-bonus">+20%</div>
+                            </div>`).join('')}
+                    ` : ''}
+                    ${contested.length > 0 ? `
+                        <div style="font-size:10px;color:#f43f5e;font-weight:700;margin:6px 0 4px;">⚔️ ENEMY CONTROLLED</div>
+                        ${contested.map(c => `
+                            <div class="constellation-row">
+                                <div class="constellation-dot" style="background:${c.color};opacity:0.5;"></div>
+                                <div class="constellation-name">${c.icon} ${c.name}</div>
+                                <div class="constellation-owner">${c.controller} · ${c.pct}% yours</div>
+                                <div class="constellation-bonus" style="color:#f43f5e;border-color:rgba(244,63,94,0.3);">Contested</div>
+                            </div>`).join('')}
+                    ` : ''}
+                    ${unclaimed.length > 0 ? `
+                        <div style="font-size:10px;color:var(--text-secondary);font-weight:700;margin:6px 0 4px;">🔘 UNCLAIMED</div>
+                        ${unclaimed.map(c => `
+                            <div class="constellation-row" style="opacity:0.55;">
+                                <div class="constellation-dot" style="background:#444;"></div>
+                                <div class="constellation-name">${c.icon} ${c.name}</div>
+                                <div class="constellation-owner">${c.playerCount > 0 ? c.playerCount + ' of ' + c.total + ' yours' : c.total + ' planets'}</div>
+                                <div class="constellation-bonus" style="color:var(--text-secondary);border-color:rgba(255,255,255,0.1);">Unclaimed</div>
+                            </div>`).join('')}
+                    ` : ''}
+                `;
+            }
+
+            // ═══════════════════════════════════════════════
+            //  PLANET TIER SYSTEM
+            // ═══════════════════════════════════════════════
+
+            // Returns { tier, buildingTotal, nextTierAt, tierBonus }
+            getPlanetTierInfo(planet) {
+                const buildingTotal = planet.buildings
+                    ? Object.values(planet.buildings).reduce((s, v) => s + v, 0)
+                    : 0;
+
+                // Thresholds: Tier 1 = 0-4, Tier 2 = 5-11, Tier 3 = 12-19, Tier 4 = 20+
+                let tier = 1;
+                if      (buildingTotal >= 20) tier = 4;
+                else if (buildingTotal >= 12) tier = 3;
+                else if (buildingTotal >= 5)  tier = 2;
+
+                const thresholds = [0, 5, 12, 20];
+                const nextTierAt  = tier < 4 ? thresholds[tier] : null;
+                const progress    = tier < 4
+                    ? ((buildingTotal - thresholds[tier - 1]) / (thresholds[tier] - thresholds[tier - 1])) * 100
+                    : 100;
+
+                const tierBonuses = {
+                    1: { production: 1.00, defense: 1.00,  label: 'I',   icon: '⬡',  color: '#4a9eff' },
+                    2: { production: 1.20, defense: 1.15,  label: 'II',  icon: '⬡⬡', color: '#00ff88' },
+                    3: { production: 1.50, defense: 1.35,  label: 'III', icon: '⬡⬡⬡',color: '#ffaa4a' },
+                    4: { production: 2.00, defense: 1.60,  label: 'IV',  icon: '★',   color: '#ffd700' },
+                };
+
+                return { tier, buildingTotal, nextTierAt, progress, bonus: tierBonuses[tier] };
+            }
+
+            // Apply tier production bonus — called from generateResources
+            getTierProductionMultiplier(planet) {
+                if (!planet.owner || planet.owner !== this.selectedRace?.name) return 1.0;
+                return this.getPlanetTierInfo(planet).bonus.production;
+            }
+
+            // Announce Tier IV achievement server-wide
+            _announceTierIV(planet) {
+                if (!planet._tierIVAnnounced) {
+                    planet._tierIVAnnounced = true;
+                    const name = this.playerData?.username || this.selectedRace?.name || 'A player';
+                    if (typeof chatManager !== 'undefined') {
+                        chatManager.addMessage({
+                            username: '🌐 GALAXY NEWS',
+                            race: '',
+                            raceColor: '#ffd700',
+                            text: `⭐ ${name} has elevated ${planet.name} to Tier IV — the first of a new galactic landmark!`,
+                            timestamp: Date.now(),
+                            type: 'user',
+                            isBot: false,
+                        });
+                    }
+                    this.showNotification(`⭐ ${planet.name} has reached TIER IV! It is now a galactic landmark!`);
+                }
+            }
+
+            // ═══════════════════════════════════════════════
+            //  SIEGE SYSTEM
+            // ═══════════════════════════════════════════════
+
+            initiateSiege(targetPlanetId) {
+                const target = this.planets.find(p => p.id === targetPlanetId);
+                if (!target || !target.owner) return;
+                if (target.owner === this.selectedRace.name) {
+                    this.showNotification('⚠️ Cannot siege your own planet!');
+                    return;
+                }
+
+                // Check if already sieging this planet
+                const existing = (this.sieges || []).find(s => s.planetId === targetPlanetId && s.active);
+                if (existing) {
+                    this.showSiegeStatusModal(existing, target);
+                    return;
+                }
+
+                // Need ships or a fleet
+                const availableShips = Object.values(this.ships).filter(s => s.researched && s.count > 0 && !s.onMission);
+                const availableFleets = this.fleets.filter(f => f.stacks && f.stacks.length > 0 && !f.onMission);
+
+                if (availableShips.length === 0 && availableFleets.length === 0) {
+                    this.showNotification('⚠️ No ships or fleets available to begin a siege!');
+                    return;
+                }
+
+                // Calculate he3 travel cost (same as attack)
+                const ownedPlanets = this.planets.filter(p => p.owner === this.selectedRace.name);
+                const avgX = ownedPlanets.reduce((s, p) => s + p.position.x, 0) / (ownedPlanets.length || 1);
+                const avgY = ownedPlanets.reduce((s, p) => s + p.position.y, 0) / (ownedPlanets.length || 1);
+                const planetCount = this.planets.length;
+                const travelTime  = Math.max(30, Math.floor((5 + planetCount * 0.5) * 15));
+                const he3Cost     = Math.floor((200 + planetCount * 20) * 5);
+
+                if (this.resources.he3 < he3Cost) {
+                    this.showNotification(`⚠️ Need ⚡${he3Cost.toLocaleString()} HE3 to reach ${target.name}!`);
+                    return;
+                }
+
+                // Build siege prep modal
+                const modal = document.createElement('div');
+                modal.style.cssText = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:10001;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.3s;`;
+                modal.innerHTML = `
+                    <div style="max-width:560px;width:90%;background:var(--bg-secondary);border:2px solid #cc4400;border-radius:12px;padding:24px;max-height:80vh;overflow-y:auto;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                            <div style="font-size:22px;font-weight:900;color:#ff6622;">🔒 Begin Siege</div>
+                            <button onclick="this.closest('div[style*=fixed]').remove()" style="background:rgba(255,0,0,0.1);border:1px solid #ff4a4a;border-radius:4px;color:#ff4a4a;padding:6px 14px;cursor:pointer;">✕</button>
+                        </div>
+                        <div style="padding:12px;background:rgba(255,102,0,0.08);border-left:3px solid #cc4400;border-radius:4px;margin-bottom:16px;">
+                            <div style="font-weight:700;margin-bottom:4px;">Target: ${target.name}</div>
+                            <div style="font-size:11px;color:var(--text-secondary);">
+                                Owner: ${target.owner}<br>
+                                Travel Time: ${travelTime}s (${Math.floor(travelTime/60)}min)<br>
+                                HE3 Cost: ⚡${he3Cost.toLocaleString()}<br>
+                                Siege Duration: <strong style="color:#ff8800;">5 minutes</strong> to drain enemy production by 60%<br>
+                                Victory Condition: Survive the siege → <strong style="color:#00ff88;">capture the planet intact</strong>
+                            </div>
+                        </div>
+                        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:16px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px;">
+                            ⚠️ The defender will be notified and can send a relief fleet to break the siege. Surviving buildings are preserved on capture.
+                        </div>
+
+                        ${availableFleets.length > 0 ? `
+                            <div style="margin-bottom:14px;">
+                                <div style="font-weight:700;margin-bottom:10px;font-size:13px;">🚀 Send Fleet into Orbit:</div>
+                                <div id="siegeFleetList"></div>
+                            </div>
+                            <div style="text-align:center;margin:10px 0;color:var(--text-secondary);font-size:11px;">— OR —</div>
+                        ` : ''}
+
+                        <div style="margin-bottom:14px;">
+                            <div style="font-weight:700;margin-bottom:10px;font-size:13px;">Select Ships from Hangar:</div>
+                            <div id="siegeShipList"></div>
+                        </div>
+
+                        <div style="display:flex;gap:12px;margin-top:16px;">
+                            <button onclick="this.closest('div[style*=fixed]').remove()" style="flex:1;padding:11px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-secondary);cursor:pointer;">Cancel</button>
+                            <button onclick="window.game.launchSiege(${target.id}, ${travelTime}, ${he3Cost})" style="flex:1;padding:11px;background:linear-gradient(135deg,rgba(255,102,0,0.2),rgba(200,50,0,0.2));border:2px solid #cc4400;border-radius:6px;color:#ff6622;font-weight:700;cursor:pointer;">🔒 Begin Siege</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+                // Populate fleet list
+                if (availableFleets.length > 0) {
+                    const fl = document.getElementById('siegeFleetList');
+                    fl.innerHTML = availableFleets.map((fleet, idx) => {
+                        const ships  = fleet.stacks.reduce((s, st) => s + st.count, 0);
+                        const power  = fleet.stacks.reduce((s, st) => { const sh = this.ships[st.shipType]; return s + (sh ? sh.damage * st.count : 0); }, 0);
+                        return `<div style="margin-bottom:7px;padding:11px;background:var(--bg-tertiary);border:2px solid var(--border-color);border-radius:6px;cursor:pointer;transition:all 0.2s;"
+                                     onclick="window.game.selectSiegeFleet(${idx}, this)"
+                                     onmouseover="this.style.borderColor='#cc4400'" onmouseout="if(!this.classList.contains('selected'))this.style.borderColor='var(--border-color)'">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                                <div style="font-weight:700;">⚓ ${fleet.name}</div>
+                                <div style="font-size:11px;">🚀 ${ships} ships &nbsp;⚔️ ${power.toLocaleString()} power</div>
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
+
+                // Populate ship list
+                const sl = document.getElementById('siegeShipList');
+                sl.innerHTML = availableShips.map(ship => `
+                    <div style="margin-bottom:7px;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+                            <div><span style="font-weight:700;">${ship.icon} ${ship.name}</span><span style="font-size:11px;color:var(--text-secondary);margin-left:8px;">⚔️${ship.damage} 💚${ship.hitPoints}</span></div>
+                            <div style="font-size:12px;color:var(--accent-secondary);">Available: ${ship.count}</div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input type="number" id="siegeShip_${ship.name}" min="0" max="${ship.count}" value="0"
+                                   style="flex:1;padding:5px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary);text-align:center;">
+                            <button onclick="document.getElementById('siegeShip_${ship.name}').value=${ship.count}"
+                                    style="padding:5px 10px;background:rgba(0,217,255,0.1);border:1px solid var(--accent-primary);border-radius:4px;color:var(--accent-primary);font-size:11px;cursor:pointer;">All</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            selectSiegeFleet(idx, el) {
+                document.querySelectorAll('#siegeFleetList > div').forEach(d => {
+                    d.classList.remove('selected'); d.style.borderColor = 'var(--border-color)';
+                });
+                el.classList.add('selected'); el.style.borderColor = '#cc4400';
+                document.querySelectorAll('input[id^="siegeShip_"]').forEach(i => i.value = 0);
+                window.selectedSiegeFleetIndex = idx;
+            }
+
+            launchSiege(targetPlanetId, travelTime, he3Cost) {
+                const target = this.planets.find(p => p.id === targetPlanetId);
+                if (!target) return;
+
+                // Collect attacking force
+                const fleetIdx = window.selectedSiegeFleetIndex;
+                const force = {};
+                let totalPower = 0;
+                let hasShips = false;
+                let usingFleet = false;
+
+                if (fleetIdx !== undefined && fleetIdx !== null) {
+                    const fleet = this.fleets[fleetIdx];
+                    if (fleet && fleet.stacks.length > 0) {
+                        fleet.stacks.forEach(st => {
+                            const sh = this.ships[st.shipType];
+                            if (sh) { force[st.shipType] = st.count; totalPower += sh.damage * st.count; hasShips = true; }
+                        });
+                        usingFleet = true;
+                    }
+                } else {
+                    Object.values(this.ships).forEach(ship => {
+                        const inp = document.getElementById(`siegeShip_${ship.name}`);
+                        if (inp) {
+                            const qty = parseInt(inp.value) || 0;
+                            if (qty > 0) { force[ship.name] = qty; totalPower += ship.damage * qty; hasShips = true; }
+                        }
+                    });
+                }
+
+                if (!hasShips) { this.showNotification('⚠️ Select at least one ship!'); return; }
+
+                // Deduct HE3 + mark ships
+                this.resources.he3 -= he3Cost;
+                this.updateResources();
+                if (usingFleet && fleetIdx !== undefined) {
+                    if (this.fleets[fleetIdx]) this.fleets[fleetIdx].onMission = true;
+                } else {
+                    Object.keys(force).forEach(n => { if (this.ships[n]) this.ships[n].onMission = true; });
+                }
+
+                // Close modal
+                document.querySelectorAll('div[style*="z-index: 10001"]').forEach(m => m.remove());
+                window.selectedSiegeFleetIndex = null;
+
+                this.showNotification(`🔒 Fleet traveling to ${target.name}… siege begins in ${travelTime}s`);
+
+                const SIEGE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+                const missionFleetIdx = usingFleet ? fleetIdx : null;
+                const missionShipNames = usingFleet ? null : Object.keys(force);
+
+                setTimeout(() => {
+                    // Fleet arrives — check if target still enemy-owned
+                    if (target.owner === this.selectedRace.name || !target.owner) {
+                        // No longer an enemy planet; abort and return fleet
+                        this._returnSiegeForce(missionFleetIdx, missionShipNames, force);
+                        this.showNotification(`ℹ️ ${target.name} is no longer hostile — siege aborted, fleet returning.`);
+                        return;
+                    }
+
+                    // Calculate siege power vs defense
+                    let defense = 1000;
+                    if (target.buildings) {
+                        defense += (target.buildings['Missile Silo']  || 0) * 500;
+                        defense += (target.buildings['Space Station'] || 0) * 1000;
+                        defense += (target.buildings['Barracks']      || 0) * 300;
+                    }
+                    if (target.botGarrisonPower) defense += target.botGarrisonPower;
+
+                    if (totalPower < defense * 0.5) {
+                        // Too weak to establish orbit — siege fails immediately
+                        const losses = {};
+                        Object.entries(force).forEach(([n, qty]) => { losses[n] = Math.ceil(qty * 0.4); });
+                        Object.entries(losses).forEach(([n, c]) => { if (this.ships[n]) this.ships[n].count = Math.max(0, this.ships[n].count - c); });
+                        this._returnSiegeForce(missionFleetIdx, missionShipNames, force);
+                        this.showNotification(`⚠️ Siege of ${target.name} repelled — defenses too strong! Lost ${Object.values(losses).reduce((s,v)=>s+v,0)} ships.`);
+                        return;
+                    }
+
+                    // Siege established
+                    const siegeId = `siege_${Date.now()}`;
+                    const siege = {
+                        id: siegeId,
+                        planetId: targetPlanetId,
+                        planetName: target.name,
+                        attackPower: totalPower,
+                        force,
+                        missionFleetIdx,
+                        missionShipNames,
+                        startedAt: Date.now(),
+                        endsAt: Date.now() + SIEGE_DURATION_MS,
+                        active: true,
+                    };
+                    if (!this.sieges) this.sieges = [];
+                    this.sieges.push(siege);
+
+                    // Drain 60% of planet production during siege
+                    target.siegedBy = this.selectedRace.name;
+                    target.siegedUntil = siege.endsAt;
+
+                    this.showNotification(`🔒 Siege of ${target.name} established! Hold for 5 minutes to capture.`);
+                    this.updateMap();
+                    this.renderEnemyPlanets();
+                    this.saveGameState();
+
+                    // Siege resolution timer
+                    const siegeTimer = setTimeout(() => {
+                        this._resolveSiege(siege, target, missionFleetIdx, missionShipNames, force);
+                    }, SIEGE_DURATION_MS);
+
+                    // Attach timer so we can cancel if needed
+                    siege._timerId = siegeTimer;
+
+                }, travelTime * 1000);
+            }
+
+            _resolveSiege(siege, target, missionFleetIdx, missionShipNames, force) {
+                siege.active = false;
+                target.siegedBy  = null;
+                target.siegedUntil = null;
+
+                // Check if still enemy (might have been abandoned / taken by another)
+                if (target.owner === this.selectedRace.name || !target.owner) {
+                    this._returnSiegeForce(missionFleetIdx, missionShipNames, force);
+                    this.showNotification(`ℹ️ ${siege.planetName} changed hands during siege.`);
+                    this.saveGameState();
+                    return;
+                }
+
+                // Fleet takes 15% losses from holding the siege
+                const lossRate = 0.15;
+                const losses = {};
+                Object.entries(force).forEach(([n, qty]) => {
+                    const lost = Math.ceil(qty * lossRate);
+                    losses[n] = lost;
+                    if (this.ships[n]) this.ships[n].count = Math.max(0, this.ships[n].count - lost);
+                });
+
+                // Capture — buildings preserved (unlike normal attack which wipes them)
+                target.owner = this.selectedRace.name;
+                target.ownerUsername = this.playerData?.username || this.selectedRace.name;
+                target.botGarrison = {};
+                target.botGarrisonPower = 0;
+
+                this._returnSiegeForce(missionFleetIdx, missionShipNames, force);
+
+                const totalLost = Object.values(losses).reduce((s, v) => s + v, 0);
+                this.showNotification(`✅ Siege victorious! ${siege.planetName} captured with buildings intact! (Lost ${totalLost} ships)`);
+
+                this.renderPlanets();
+                this.renderOwnedPlanets();
+                this.renderEnemyPlanets();
+                this.updateMap();
+                this.calculatePlayerPowerRating && this.calculatePlayerPowerRating();
+                this.saveGameState();
+            }
+
+            _returnSiegeForce(missionFleetIdx, missionShipNames, force) {
+                if (missionFleetIdx !== null && missionFleetIdx !== undefined && this.fleets[missionFleetIdx]) {
+                    this.fleets[missionFleetIdx].onMission = false;
+                }
+                if (missionShipNames) {
+                    missionShipNames.forEach(n => { if (this.ships[n]) this.ships[n].onMission = false; });
+                }
+            }
+
+            showSiegeStatusModal(siege, target) {
+                const remaining = Math.max(0, siege.endsAt - Date.now());
+                const mins = Math.floor(remaining / 60000);
+                const secs = Math.floor((remaining % 60000) / 1000);
+                const pct  = Math.round(100 * (1 - remaining / (5 * 60 * 1000)));
+                const modal = document.createElement('div');
+                modal.style.cssText = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:10001;display:flex;align-items:center;justify-content:center;`;
+                modal.innerHTML = `
+                    <div style="max-width:440px;width:90%;background:var(--bg-secondary);border:2px solid #cc4400;border-radius:12px;padding:24px;">
+                        <div style="font-size:20px;font-weight:900;color:#ff6622;margin-bottom:16px;">🔒 Active Siege</div>
+                        <div style="margin-bottom:12px;"><strong>${target.name}</strong> — owned by ${target.owner}</div>
+                        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">Time remaining: <strong style="color:#ff8800;">${mins}m ${secs}s</strong></div>
+                        <div style="width:100%;height:8px;background:rgba(255,255,255,0.08);border-radius:4px;overflow:hidden;margin-bottom:16px;">
+                            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#ff8800,#ff3300);border-radius:4px;transition:width 1s;"></div>
+                        </div>
+                        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:16px;">Enemy production is reduced by 60% while the siege holds. Capture is automatic when the timer expires.</div>
+                        <button onclick="this.closest('div[style*=fixed]').remove()" style="width:100%;padding:10px;background:var(--bg-tertiary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-secondary);cursor:pointer;">Close</button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+
             resolveAttack(target, attackForce, attackPower, missionFleetIndex, missionShips) {
                 // Clear onMission flag — fleet/ships are now back regardless of outcome
                 if (missionFleetIndex !== null && missionFleetIndex !== undefined && this.fleets[missionFleetIndex]) {
@@ -14614,6 +15523,9 @@ const SHIP_IMAGE_DATA = {
                     if (target.buildings['City Dome']) {
                         defense += defense * (target.buildings['City Dome'] * 0.05);
                     }
+                    // Tier defense bonus — higher-tier planets are hardened
+                    const targetTierInfo = this.getPlanetTierInfo(target);
+                    defense = Math.floor(defense * targetTierInfo.bonus.defense);
                 }
                 // NPC garrison ships actively defend — real ships, real power
                 if (target.botGarrisonPower) {
@@ -18278,11 +19190,23 @@ const SHIP_IMAGE_DATA = {
                 
                 this.resources.metal -= building.cost.metal;
                 this.resources.credits -= building.cost.credits;
+                const prevTier = this.getPlanetTierInfo(planet).tier;
                 planet.buildings[buildingName] = currentLevel + 1;
-                
+                const newTierInfo = this.getPlanetTierInfo(planet);
+                const newTier = newTierInfo.tier;
+
                 this.updateResources();
                 this.renderBuildingPanel();
-                this.showNotification(`✅ Built ${buildingName} on ${planet.name}!`);
+                this.renderOwnedPlanets();
+
+                if (newTier > prevTier) {
+                    const tierColors = { 2: '#00ff88', 3: '#ffaa4a', 4: '#ffd700' };
+                    const tierNames  = { 2: 'II', 3: 'III', 4: 'IV' };
+                    this.showNotification(`⭐ ${planet.name} reached Tier ${tierNames[newTier]}! Production +${Math.round((newTierInfo.bonus.production - 1) * 100)}%`);
+                    if (newTier === 4) this._announceTierIV(planet);
+                } else {
+                    this.showNotification(`✅ Built ${buildingName} on ${planet.name}! (${newTierInfo.buildingTotal} buildings)`);
+                }
             }
             
             renderClusters() {
@@ -18722,9 +19646,15 @@ const SHIP_IMAGE_DATA = {
                     const globalHE3Modifier = 0.7 * 0.65 * 0.40;    // = 0.182 (81.8% total reduction)
                     const globalFoodModifier = 0.65 * 0.40;         // = 0.26 (74% total reduction)
                     
-                    this.resources.metal += Math.floor((planet.resources.metal / 60) * metalBonus * miningMultiplier * globalMetalModifier);
-                    this.resources.he3 += Math.floor((planet.resources.he3 / 60) * globalHE3Modifier);
-                    this.resources.food += Math.floor((planet.resources.food / 60) * foodBonus * artifactFoodBonus * globalFoodModifier * foodProductionMultiplier);
+                    // Siege drain — if this planet is under siege, production cut 60%
+                    const siegeMultiplier = (planet.siegedBy && planet.siegedUntil > Date.now()) ? 0.40 : 1.0;
+                    // Tier production bonus
+                    const tierMultiplier = this.getTierProductionMultiplier(planet);
+                    // Constellation zone control bonus (+20% if player controls the zone)
+                    const constellationMultiplier = this.getConstellationProductionBonus(planet);
+                    this.resources.metal += Math.floor((planet.resources.metal / 60) * metalBonus * miningMultiplier * globalMetalModifier * siegeMultiplier * tierMultiplier * constellationMultiplier);
+                    this.resources.he3 += Math.floor((planet.resources.he3 / 60) * globalHE3Modifier * siegeMultiplier * tierMultiplier * constellationMultiplier);
+                    this.resources.food += Math.floor((planet.resources.food / 60) * foodBonus * artifactFoodBonus * globalFoodModifier * foodProductionMultiplier * siegeMultiplier * tierMultiplier * constellationMultiplier);
                     
                     // NEW POPULATION GROWTH: +1% per minute with cap of 2500 per planet
                     // Apply race population modifier AND artifact population bonus
@@ -23273,6 +24203,113 @@ const SHIP_IMAGE_DATA = {
             0% { opacity: 1; }
             100% { opacity: 0; }
         }
+
+        /* ===== RELIC WORLD SYSTEM ===== */
+        .relic-card {
+            border: 2px solid #a855f7 !important;
+            background: linear-gradient(135deg, rgba(168,85,247,0.08), rgba(30,0,60,0.6)) !important;
+            position: relative;
+            overflow: hidden;
+        }
+        .relic-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at 30% 30%, rgba(168,85,247,0.12), transparent 70%);
+            pointer-events: none;
+        }
+        @keyframes relicPulse {
+            0%,100% { box-shadow: 0 0 6px rgba(168,85,247,0.3), 0 0 18px rgba(168,85,247,0.1); }
+            50%      { box-shadow: 0 0 14px rgba(168,85,247,0.7), 0 0 36px rgba(168,85,247,0.2); }
+        }
+        .relic-card { animation: relicPulse 3s ease-in-out infinite; }
+        .relic-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px; border-radius: 10px; font-size: 9px; font-weight: 800;
+            letter-spacing: 0.5px; background: rgba(168,85,247,0.2);
+            border: 1px solid #a855f7; color: #c084fc; margin-top: 3px;
+        }
+        .relic-step {
+            padding: 7px 10px; border-radius: 6px; margin-bottom: 6px;
+            border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03);
+            font-size: 11px;
+        }
+        .relic-step.complete { border-color: #00ff88; background: rgba(0,255,136,0.05); }
+        .relic-step.active   { border-color: #a855f7; background: rgba(168,85,247,0.08); }
+        .relic-step.locked   { opacity: 0.45; }
+        .relic-unlock-btn {
+            width: 100%; padding: 8px; border-radius: 5px; font-size: 10px;
+            font-weight: 700; cursor: pointer; margin-top: 4px;
+            background: linear-gradient(135deg, rgba(168,85,247,0.2), rgba(100,30,200,0.2));
+            border: 1.5px solid #a855f7; color: #c084fc; transition: all 0.2s;
+        }
+        .relic-unlock-btn:hover:not(:disabled) { background: rgba(168,85,247,0.35); }
+        .relic-unlock-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* ===== CONSTELLATION SYSTEM ===== */
+        .constellation-panel {
+            margin-bottom: 12px;
+            padding: 10px 14px;
+            background: rgba(157,74,255,0.07);
+            border: 1px solid rgba(157,74,255,0.35);
+            border-radius: 8px;
+        }
+        .constellation-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .constellation-row:last-child { border-bottom: none; }
+        .constellation-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+        }
+        .constellation-name { font-size: 11px; font-weight: 700; flex: 1; }
+        .constellation-owner { font-size: 10px; color: var(--text-secondary); }
+        .constellation-bonus {
+            font-size: 9px; font-weight: 800; padding: 2px 6px;
+            border-radius: 8px; background: rgba(255,215,0,0.12);
+            border: 1px solid rgba(255,215,0,0.3); color: #ffd700;
+        }
+
+        /* ===== PLANET TIER SYSTEM ===== */
+        .tier-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.4px;
+            margin-top: 3px;
+        }
+        .tier-1 { background: rgba(74,158,255,0.15);  border: 1px solid #4a9eff; color: #4a9eff; }
+        .tier-2 { background: rgba(0,255,136,0.15);   border: 1px solid #00ff88; color: #00ff88; }
+        .tier-3 { background: rgba(255,170,74,0.15);  border: 1px solid #ffaa4a; color: #ffaa4a; }
+        .tier-4 { background: rgba(255,215,0,0.18);   border: 1px solid #ffd700; color: #ffd700; }
+        .tier-progress-bar { width:100%; height:3px; background:rgba(255,255,255,0.07); border-radius:2px; margin-top:4px; overflow:hidden; }
+        .tier-progress-fill { height:100%; border-radius:2px; transition: width 0.6s ease; }
+        .tier-upgrade-btn {
+            margin-top: 4px; width: 100%; padding: 4px; border-radius: 3px;
+            font-size: 9px; cursor: pointer; font-weight: 700;
+            background: rgba(255,215,0,0.12); border: 1px solid #ffd700; color: #ffd700;
+            transition: background 0.2s;
+        }
+        .tier-upgrade-btn:hover { background: rgba(255,215,0,0.25); }
+        .siege-badge {
+            display: inline-block; padding: 2px 7px; border-radius: 10px;
+            font-size: 9px; font-weight: 800; letter-spacing: 0.5px; background: rgba(255,136,0,0.18);
+            border: 1px solid #ff8800; color: #ff8800; margin-top: 2px;
+        }
+        .siege-progress-bar { width:100%; height:4px; background:rgba(255,255,255,0.08); border-radius:2px; margin-top:4px; overflow:hidden; }
+        .siege-progress-fill { height:100%; border-radius:2px; background:linear-gradient(90deg,#ff8800,#ff3300); transition:width 1s linear; }
+        @keyframes siegePulse {
+            0%,100% { box-shadow: 0 0 0 0 rgba(255,136,0,0); }
+            50%      { box-shadow: 0 0 8px 2px rgba(255,136,0,0.35); }
+        }
+        .planet-card.under-siege { border-color: #ff8800 !important; animation: siegePulse 2s ease-in-out infinite; }
 
         /* ===== PLANET CLAIM ANIMATION ===== */
         @keyframes planetClaimed {
