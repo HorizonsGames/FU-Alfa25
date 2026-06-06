@@ -461,7 +461,9 @@
             position: relative;
             overflow: hidden;
             animation: zoomIn 0.6s ease-out 0.2s backwards;
+            cursor: grab;
         }
+        .galaxy-map:active { cursor: grabbing; }
         
         /* Star field layers */
         .galaxy-map::before {
@@ -516,6 +518,7 @@
             height: 100%;
             position: relative;
             z-index: 2;
+            pointer-events: none;
         }
         
         .map-controls {
@@ -524,6 +527,8 @@
             left: 20px;
             display: flex;
             gap: 8px;
+            z-index: 10;
+            pointer-events: all;
         }
         
         .map-btn {
@@ -5012,6 +5017,7 @@
                 <button class="map-btn" onclick="window.game.zoomIn()">+</button>
                 <button class="map-btn" onclick="window.game.zoomOut()">−</button>
                 <button class="map-btn" onclick="window.game.resetView()">⊙</button>
+                <button class="map-btn-home" onclick="window.game.goHome()" title="Go to home planet">🏠</button>
             </div>
         </div>
         
@@ -12594,7 +12600,7 @@ const SHIP_IMAGE_DATA = {
                 this.serverInfoInterval = null;
                 this.autoSaveInterval = null;
                 
-                this.mapZoom = 1;
+                this.mapZoom = 0.08;  // Start zoomed out — galaxy is 10× larger (goHome will fly to home planet)
                 this.mapPan = { x: 0, y: 0 };
                 
                 // Initialize Commander Manager
@@ -12662,6 +12668,10 @@ const SHIP_IMAGE_DATA = {
                     } else {
                         console.log('🌍 Generating starting planets...');
                         this.generateStartingPlanets();
+
+                        // Auto-set the first owned planet as home world
+                        const firstOwned = this.planets.find(p => p.owner === this.selectedRace.name);
+                        if (firstOwned) this.homePlanetId = Number(firstOwned.id);
                         
                         // Calculate initial population from starting planets
                         let totalPopulation = 0;
@@ -12688,6 +12698,10 @@ const SHIP_IMAGE_DATA = {
                     
                     if (playerData.gameState.sieges) {
                         this.sieges = playerData.gameState.sieges;
+                    }
+
+                    if (playerData.gameState.homePlanetId) {
+                        this.homePlanetId = playerData.gameState.homePlanetId;
                     }
 
                     // Restore relic unlock progress on planets that are already in the world
@@ -12827,6 +12841,7 @@ const SHIP_IMAGE_DATA = {
                     guildName: this.guildName || 'Galactic Pioneers',
                     temporaryBonuses: this.temporaryBonuses || [],
                     unlockedShips: this.unlockedShips || [],
+                    homePlanetId: this.homePlanetId || null,
                     sieges: this.sieges || [],
                     relicWorlds: this.planets.filter(p => p.isRelicWorld).map(p => ({
                         id: p.id, relicUnlockStep: p.relicUnlockStep || 0,
@@ -12883,6 +12898,16 @@ const SHIP_IMAGE_DATA = {
                     
                     console.log('🗺️ Step 9: updateMap');
                     this.updateMap();
+
+                    // Fly to home planet once canvas is ready and sized
+                    setTimeout(() => {
+                        // Ensure canvas has real dimensions before flying home
+                        if (this.canvas && (this.canvas.width < 10 || this.canvas.height < 10)) {
+                            this.canvas.width  = this.canvas.offsetWidth  || this.canvas.parentElement?.offsetWidth  || 800;
+                            this.canvas.height = this.canvas.offsetHeight || this.canvas.parentElement?.offsetHeight || 600;
+                        }
+                        this.goHome();
+                    }, 800);
 
                     // Spawn relic worlds on first load (delayed so planets array is ready)
                     setTimeout(() => this.spawnRelicWorlds(), 3000);
@@ -12960,8 +12985,8 @@ const SHIP_IMAGE_DATA = {
                         return;
                     }
                     this.ctx = this.canvas.getContext('2d');
-                    this.canvas.width = this.canvas.offsetWidth;
-                    this.canvas.height = this.canvas.offsetHeight;
+                    this.canvas.width  = this.canvas.offsetWidth  || this.canvas.parentElement?.offsetWidth  || 800;
+                    this.canvas.height = this.canvas.offsetHeight || this.canvas.parentElement?.offsetHeight || 600;
                     console.log(`✅ Canvas setup: ${this.canvas.width}x${this.canvas.height}`);
                     
                     // Initialize animation flag
@@ -12971,8 +12996,8 @@ const SHIP_IMAGE_DATA = {
                         window.removeEventListener('resize', this._resizeHandler);
                     }
                     this._resizeHandler = () => {
-                        this.canvas.width = this.canvas.offsetWidth;
-                        this.canvas.height = this.canvas.offsetHeight;
+                        this.canvas.width  = this.canvas.offsetWidth  || this.canvas.parentElement?.offsetWidth  || 800;
+                        this.canvas.height = this.canvas.offsetHeight || this.canvas.parentElement?.offsetHeight || 600;
                         // Reset star field and offscreen cache on resize
                         this.starField = null;
                         this.nebulaeSpots = null;
@@ -12985,10 +13010,11 @@ const SHIP_IMAGE_DATA = {
 
                     // ── Wheel zoom ───────────────────────────────────────────
                     this._wheelHandler = (e) => {
+                        if (e.target.closest('.map-controls')) return;
                         e.preventDefault();
                         const delta = e.deltaY || e.detail || (-e.wheelDelta);
                         const factor = delta > 0 ? 1 / 1.12 : 1.12;
-                        const newZoom = Math.min(Math.max(this.mapZoom * factor, 0.3), 5);
+                        const newZoom = Math.min(Math.max(this.mapZoom * factor, 0.02), 50);
 
                         // Zoom toward the cursor position
                         const rect = this.canvas.getBoundingClientRect();
@@ -13006,7 +13032,10 @@ const SHIP_IMAGE_DATA = {
 
                         if (!this.mapAnimating) this.startMapAnimation();
                     };
-                    this.canvas.addEventListener('wheel', this._wheelHandler, { passive: false });
+                    // Wheel on wrapper (canvas has pointer-events:none)
+                    const _wheelWrapper = this.canvas.parentElement || this.canvas;
+                    _wheelWrapper.addEventListener('wheel', this._wheelHandler, { passive: false });
+                    this._wheelWrapper = _wheelWrapper; // save for cleanup
 
                     // ── Drag to pan ───────────────────────────────────────────
                     let _dragging = false;
@@ -13014,10 +13043,12 @@ const SHIP_IMAGE_DATA = {
 
                     this._mapMouseDown = (e) => {
                         if (e.button !== 0) return;
+                        // Ignore clicks on overlay controls so buttons remain clickable
+                        if (e.target.closest('.map-controls')) return;
                         _dragging = true;
                         _lastX = e.clientX;
                         _lastY = e.clientY;
-                        this.canvas.style.cursor = 'grabbing';
+                        if (this.canvas.parentElement) this.canvas.parentElement.style.cursor = 'grabbing';
                     };
                     this._mapMouseMove = (e) => {
                         if (!_dragging) return;
@@ -13031,7 +13062,7 @@ const SHIP_IMAGE_DATA = {
                     };
                     this._mapMouseUp = () => {
                         _dragging = false;
-                        this.canvas.style.cursor = 'grab';
+                        if (this.canvas.parentElement) this.canvas.parentElement.style.cursor = 'grab';
                     };
 
                     // ── Touch pan ─────────────────────────────────────────────
@@ -13067,7 +13098,7 @@ const SHIP_IMAGE_DATA = {
                             );
                             if (_lastPinchDist !== null) {
                                 const pinchFactor = dist / _lastPinchDist;
-                                this.mapZoom = Math.min(Math.max(this.mapZoom * pinchFactor, 0.3), 5);
+                                this.mapZoom = Math.min(Math.max(this.mapZoom * pinchFactor, 0.02), 50);
                                 if (!this.mapAnimating) this.startMapAnimation();
                             }
                             _lastPinchDist = dist;
@@ -13078,7 +13109,10 @@ const SHIP_IMAGE_DATA = {
                     };
 
                     this.canvas.style.cursor = 'grab';
-                    this.canvas.addEventListener('mousedown',  this._mapMouseDown);
+                    // Attach mouse handlers to the galaxy-map wrapper so .map-controls
+                    // buttons are never blocked by the canvas element
+                    const mapWrapper = this.canvas.parentElement;
+                    (mapWrapper || this.canvas).addEventListener('mousedown', this._mapMouseDown);
                     document.addEventListener('mousemove', this._mapMouseMove);
                     document.addEventListener('mouseup',   this._mapMouseUp);
                     this.canvas.addEventListener('touchstart', this._mapTouchStart, { passive: false });
@@ -13164,11 +13198,13 @@ const SHIP_IMAGE_DATA = {
                     this._resizeHandler = null;
                 }
                 if (this._wheelHandler && this.canvas) {
-                    this.canvas.removeEventListener('wheel', this._wheelHandler);
+                    const wr = this._wheelWrapper || this.canvas.parentElement || this.canvas;
+                    wr.removeEventListener('wheel', this._wheelHandler);
                     this._wheelHandler = null;
                 }
                 if (this._mapMouseDown && this.canvas) {
-                    this.canvas.removeEventListener('mousedown', this._mapMouseDown);
+                    const mapWrapper = this.canvas.parentElement;
+                    (mapWrapper || this.canvas).removeEventListener('mousedown', this._mapMouseDown);
                     document.removeEventListener('mousemove', this._mapMouseMove);
                     document.removeEventListener('mouseup',   this._mapMouseUp);
                 }
@@ -13314,24 +13350,52 @@ const SHIP_IMAGE_DATA = {
                 ctx.strokeStyle = 'rgba(0, 217, 255, 0.1)';
                 ctx.lineWidth = 1;
                 
-                for (let x = -500; x <= 500; x += 50) {
+                // Draw grid — only lines that are actually on-screen (culled for performance)
+                const gridStep = 500;
+                const gridExtent = 5000;
+                const screenLeft  = (-centerX / this.mapZoom) - this.mapPan.x;
+                const screenRight = ( centerX / this.mapZoom) - this.mapPan.x;
+                const screenTop   = (-centerY / this.mapZoom) - this.mapPan.y;
+                const screenBot   = ( centerY / this.mapZoom) - this.mapPan.y;
+                const startX = Math.max(-gridExtent, Math.floor(screenLeft  / gridStep) * gridStep);
+                const endX   = Math.min( gridExtent, Math.ceil (screenRight / gridStep) * gridStep);
+                const startY = Math.max(-gridExtent, Math.floor(screenTop   / gridStep) * gridStep);
+                const endY   = Math.min( gridExtent, Math.ceil (screenBot   / gridStep) * gridStep);
+
+                for (let x = startX; x <= endX; x += gridStep) {
+                    const sx = centerX + (x + this.mapPan.x) * this.mapZoom;
+                    // Major sector line every 2500 units
+                    ctx.strokeStyle = (x % 2500 === 0) ? 'rgba(0, 217, 255, 0.2)' : 'rgba(0, 217, 255, 0.07)';
+                    ctx.lineWidth = (x % 2500 === 0) ? 1.5 : 1;
                     ctx.beginPath();
-                    ctx.moveTo(centerX + (x + this.mapPan.x) * this.mapZoom, 0);
-                    ctx.lineTo(centerX + (x + this.mapPan.x) * this.mapZoom, canvas.height);
+                    ctx.moveTo(sx, 0);
+                    ctx.lineTo(sx, canvas.height);
+                    ctx.stroke();
+                }
+                for (let y = startY; y <= endY; y += gridStep) {
+                    const sy = centerY + (y + this.mapPan.y) * this.mapZoom;
+                    ctx.strokeStyle = (y % 2500 === 0) ? 'rgba(0, 217, 255, 0.2)' : 'rgba(0, 217, 255, 0.07)';
+                    ctx.lineWidth = (y % 2500 === 0) ? 1.5 : 1;
+                    ctx.beginPath();
+                    ctx.moveTo(0, sy);
+                    ctx.lineTo(canvas.width, sy);
                     ctx.stroke();
                 }
                 
-                for (let y = -500; y <= 500; y += 50) {
-                    ctx.beginPath();
-                    ctx.moveTo(0, centerY + (y + this.mapPan.y) * this.mapZoom);
-                    ctx.lineTo(canvas.width, centerY + (y + this.mapPan.y) * this.mapZoom);
-                    ctx.stroke();
-                }
-                
-                // Draw planets
+                // Draw planets — cull off-screen and fog-of-war hidden planets
                 this.planets.forEach(planet => {
                     const x = centerX + (planet.position.x + this.mapPan.x) * this.mapZoom;
                     const y = centerY + (planet.position.y + this.mapPan.y) * this.mapZoom;
+
+                    // Off-screen cull — margin scales with zoom so large planets aren't clipped
+                    const cullMargin = Math.max(60, 80 * this.mapZoom);
+                    if (x < -cullMargin || x > canvas.width + cullMargin || y < -cullMargin || y > canvas.height + cullMargin) return;
+
+                    // Fog of war — hide planets not in sensor range (except player-owned)
+                    const isOwned = this._isMyPlanet(planet);
+                    const myRace  = this.selectedRace?.name;
+                    const myUser  = this.playerData?.username;
+                    if (!isOwned && !this.isInSensorRange(planet.position.x, planet.position.y)) return;
                     
                     const colors = {
                         'Water': '#0088ff',
@@ -13343,64 +13407,104 @@ const SHIP_IMAGE_DATA = {
                         'Barren': '#888888'
                     };
                     
+                    // All planet sizes scale with zoom so they grow as you zoom in
+                    // Base sizes are in world units; clamped so they stay legible when zoomed way out
+                    const pz = this.mapZoom;
+                    const pr = Math.max(4, Math.min(40, 8 * pz));          // planet body radius
+                    const glowR = pr * 2.5;
+
                     // Planet glow
-                    const gradient = ctx.createRadialGradient(x, y, 0, x, y, 20);
+                    const gradient = ctx.createRadialGradient(x, y, 0, x, y, glowR);
                     gradient.addColorStop(0, colors[planet.type] + 'aa');
                     gradient.addColorStop(1, colors[planet.type] + '00');
                     ctx.fillStyle = gradient;
-                    ctx.fillRect(x - 20, y - 20, 40, 40);
-                    
-                    // Planet
+                    ctx.fillRect(x - glowR, y - glowR, glowR * 2, glowR * 2);
+
+                    // Planet body
                     ctx.fillStyle = colors[planet.type];
                     ctx.beginPath();
-                    ctx.arc(x, y, 8, 0, Math.PI * 2);
+                    ctx.arc(x, y, pr, 0, Math.PI * 2);
                     ctx.fill();
-                    
+
+                    // Planet name label — shown when zoomed in enough
+                    if (pz >= 1.5) {
+                        ctx.save();
+                        ctx.font = `bold ${Math.round(Math.min(16, 9 * pz))}px sans-serif`;
+                        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'top';
+                        ctx.fillText(planet.name, x, y + pr + 4);
+                        // Owner name below planet name
+                        if (planet.owner && pz >= 2.5) {
+                            ctx.font = `${Math.round(Math.min(13, 7 * pz))}px sans-serif`;
+                            ctx.fillStyle = planet.owner === this.selectedRace?.name ? '#00ff88' : '#ff6b6b';
+                            ctx.fillText(planet.owner, x, y + pr + 4 + Math.round(Math.min(18, 10 * pz)));
+                        }
+                        ctx.restore();
+                    }
+
                     // Selection ring
                     if (this.selectedPlanet?.id === planet.id) {
                         ctx.strokeStyle = '#00d9ff';
-                        ctx.lineWidth = 2;
+                        ctx.lineWidth = Math.max(1.5, 2 * pz);
                         ctx.beginPath();
-                        ctx.arc(x, y, 12, 0, Math.PI * 2);
+                        ctx.arc(x, y, pr * 1.5, 0, Math.PI * 2);
                         ctx.stroke();
                     }
-                    
+
+                    // Home planet glow — gold ring
+                    if (Number(planet.id) === this.homePlanetId) {
+                        const homePulse = 0.55 + 0.35 * Math.sin(Date.now() / 700);
+                        ctx.strokeStyle = `rgba(255,215,0,${homePulse})`;
+                        ctx.lineWidth = Math.max(1.5, 2.5 * pz);
+                        ctx.beginPath();
+                        ctx.arc(x, y, pr * 2.1, 0, Math.PI * 2);
+                        ctx.stroke();
+                        const homeIconSize = Math.max(10, Math.min(28, 13 * pz));
+                        ctx.font = `${homeIconSize}px sans-serif`;
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillText('🏠', x, y - pr - 2);
+                        ctx.textBaseline = 'alphabetic';
+                    }
+
                     // Owner indicator
                     if (planet.owner) {
+                        const dotR = Math.max(2, 3 * pz);
                         // Viral Race: draw red translucent lens over claimed planets
                         if (planet.owner === this.selectedRace?.name && this.selectedRace?.name === 'The Viral Race') {
-                            const viralGlow = ctx.createRadialGradient(x, y, 0, x, y, 14);
+                            const viralGlow = ctx.createRadialGradient(x, y, 0, x, y, pr * 1.75);
                             viralGlow.addColorStop(0, 'rgba(180,0,0,0.55)');
                             viralGlow.addColorStop(0.6, 'rgba(139,0,0,0.28)');
                             viralGlow.addColorStop(1, 'rgba(80,0,0,0)');
                             ctx.fillStyle = viralGlow;
                             ctx.beginPath();
-                            ctx.arc(x, y, 14, 0, Math.PI * 2);
+                            ctx.arc(x, y, pr * 1.75, 0, Math.PI * 2);
                             ctx.fill();
-                            // Red ownership dot
                             ctx.fillStyle = '#cc0000';
                         } else {
                             ctx.fillStyle = '#00ff88';
                         }
                         ctx.beginPath();
-                        ctx.arc(x, y - 15, 3, 0, Math.PI * 2);
+                        ctx.arc(x, y - pr - dotR, dotR, 0, Math.PI * 2);
                         ctx.fill();
 
                         // Relic world glow (unowned) — purple aura
                         if (planet.isRelicWorld && !planet.owner) {
                             const pulse = 0.5 + 0.35 * Math.sin(Date.now() / 800);
-                            const relicGrad = ctx.createRadialGradient(x, y, 0, x, y, 18);
+                            const relicR = pr * 2.25;
+                            const relicGrad = ctx.createRadialGradient(x, y, 0, x, y, relicR);
                             relicGrad.addColorStop(0,   `rgba(168,85,247,${pulse * 0.5})`);
                             relicGrad.addColorStop(0.6, `rgba(168,85,247,${pulse * 0.2})`);
                             relicGrad.addColorStop(1,   'rgba(168,85,247,0)');
                             ctx.fillStyle = relicGrad;
                             ctx.beginPath();
-                            ctx.arc(x, y, 18, 0, Math.PI * 2);
+                            ctx.arc(x, y, relicR, 0, Math.PI * 2);
                             ctx.fill();
                             ctx.strokeStyle = `rgba(168,85,247,${pulse})`;
-                            ctx.lineWidth = 2;
+                            ctx.lineWidth = Math.max(1, 2 * pz);
                             ctx.beginPath();
-                            ctx.arc(x, y, 14, 0, Math.PI * 2);
+                            ctx.arc(x, y, pr * 1.75, 0, Math.PI * 2);
                             ctx.stroke();
                         }
 
@@ -13409,11 +13513,11 @@ const SHIP_IMAGE_DATA = {
                             const ti = this.getPlanetTierInfo(planet);
                             if (ti.tier >= 2) {
                                 const tierRingColors = { 2: '#00ff88', 3: '#ffaa4a', 4: '#ffd700' };
-                                const tierRingRadii  = { 2: 11, 3: 13, 4: 15 };
+                                const tierRingMult   = { 2: 1.4, 3: 1.6, 4: 1.9 };
                                 const ringColor = tierRingColors[ti.tier];
-                                const ringRadius = tierRingRadii[ti.tier];
+                                const ringRadius = pr * tierRingMult[ti.tier];
                                 ctx.strokeStyle = ringColor;
-                                ctx.lineWidth = ti.tier === 4 ? 2.5 : 1.5;
+                                ctx.lineWidth = Math.max(1, (ti.tier === 4 ? 2.5 : 1.5) * Math.min(pz, 2));
                                 ctx.globalAlpha = ti.tier === 4 ? 0.9 : 0.6;
                                 ctx.beginPath();
                                 ctx.arc(x, y, ringRadius, 0, Math.PI * 2);
@@ -13423,10 +13527,10 @@ const SHIP_IMAGE_DATA = {
                                 if (ti.tier === 4) {
                                     const pulse = 0.4 + 0.3 * Math.sin(Date.now() / 500);
                                     ctx.strokeStyle = '#ffd700';
-                                    ctx.lineWidth = 1;
+                                    ctx.lineWidth = Math.max(1, 1 * Math.min(pz, 2));
                                     ctx.globalAlpha = pulse;
                                     ctx.beginPath();
-                                    ctx.arc(x, y, 19, 0, Math.PI * 2);
+                                    ctx.arc(x, y, pr * 2.4, 0, Math.PI * 2);
                                     ctx.stroke();
                                     ctx.globalAlpha = 1;
                                 }
@@ -13434,6 +13538,9 @@ const SHIP_IMAGE_DATA = {
                         }
                     }
                 });
+
+                // ── Fog of War — drawn over all planets/rings/overlays ──
+                this.drawFogOfWar(ctx, canvas, centerX, centerY);
             }
             
             updateMap() {
@@ -13454,9 +13561,12 @@ const SHIP_IMAGE_DATA = {
             }
             
             generateStartingPlanets() {
-                // Give player 3 starting planets
+                // Give player 3 starting planets — clustered near origin for visibility
                 for (let i = 0; i < 3; i++) {
                     const planet = this.addRandomPlanet();
+                    // Override position: keep near origin so goHome flies to a visible spot
+                    planet.position.x = (Math.random() - 0.5) * 600;
+                    planet.position.y = (Math.random() - 0.5) * 400;
                     planet.owner = this.selectedRace.name;
                     planet.ownerUsername = this.playerData?.username || this.selectedRace.name;
                 }
@@ -13503,8 +13613,8 @@ const SHIP_IMAGE_DATA = {
                     name: this.generatePlanetName(),
                     type: planetType,
                     position: {
-                        x: Math.random() * 800 - 400,
-                        y: Math.random() * 600 - 300
+                        x: Math.random() * 8000 - 4000,
+                        y: Math.random() * 6000 - 3000
                     },
                     resources: {
                         metal: Math.max(100, baseMetal + modifiers.metal),
@@ -13769,9 +13879,19 @@ const SHIP_IMAGE_DATA = {
                                 const tierColors = { 1:'#4a9eff', 2:'#00ff88', 3:'#ffaa4a', 4:'#ffd700' };
                                 const pct = Math.min(100, ti.progress);
                                 const nextLabel = ti.nextTierAt ? `→ Tier ${ti.tier+1} at ${ti.nextTierAt} bldgs` : 'MAX TIER';
-                                return `<div class="tier-badge tier-${ti.tier}">${ti.bonus.icon} Tier ${ti.bonus.label} &nbsp;+${Math.round((ti.bonus.production-1)*100)}% prod</div>
+                                const sensorR = Math.round(this.getSensorRadius(planet));
+                                const isHome  = Number(planet.id) === this.homePlanetId;
+                                return `${isHome ? '<div class="home-badge">🏠 HOME WORLD</div>' : ''}
+                                        <div class="tier-badge tier-${ti.tier}">${ti.bonus.icon} Tier ${ti.bonus.label} &nbsp;+${Math.round((ti.bonus.production-1)*100)}% prod</div>
                                         <div class="tier-progress-bar"><div class="tier-progress-fill" style="width:${pct}%;background:${tierColors[ti.tier]};"></div></div>
-                                        <div style="font-size:8px;color:var(--text-secondary);margin-top:2px;">${nextLabel} (${ti.buildingTotal} now)</div>`;
+                                        <div style="font-size:8px;color:var(--text-secondary);margin-top:2px;">${nextLabel} (${ti.buildingTotal} now)</div>
+                                        <div style="font-size:8px;color:#00d9ff;margin-top:2px;">📡 Sensor radius: ${sensorR.toLocaleString()} units</div>
+                                        <button onclick="event.stopPropagation(); game.showSetHomeModal();"
+                                            style="margin-top:5px;width:100%;padding:3px;border-radius:3px;font-size:9px;
+                                                   cursor:pointer;font-weight:700;background:rgba(255,215,0,0.1);
+                                                   border:1px solid #ffd700;color:#ffd700;">
+                                            ${isHome ? '🏠 Change Home World' : '🏠 Set as Home World'}
+                                        </button>`;
                             })() : ''}
                             ${planet.population ? `<div style="font-size: 12.15px; color: var(--text-primary); margin: 1px 0;">👥 ${planet.population.toLocaleString()}</div>` : ''}
                             ${hasBuildings ? `<div style="font-size: 12.15px; color: var(--accent-secondary); margin: 1px 0;">🏗️ ${buildingCount}</div>` : ''}
@@ -13912,8 +14032,10 @@ const SHIP_IMAGE_DATA = {
 
                 // Relic worlds — always shown at top, regardless of scouted state
                 const relicPlanets     = this.planets.filter(p => p.isRelicWorld && !p.owner);
-                const availablePlanets = this.planets.filter(p => p.scouted && !p.owner && !p.isRelicWorld)
-                                             .sort((a, b) => a.name.localeCompare(b.name));
+                const availablePlanets = this.planets.filter(p =>
+                        p.scouted && !p.owner && !p.isRelicWorld &&
+                        (this._isMyPlanet(p) || this.isInSensorRange(p.position.x, p.position.y))
+                    ).sort((a, b) => a.name.localeCompare(b.name));
 
                 if (relicPlanets.length === 0 && availablePlanets.length === 0) {
                     list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No available planets. Scout new planets to expand your empire.</div>';
@@ -13938,7 +14060,10 @@ const SHIP_IMAGE_DATA = {
 
                 // Group enemy planets by owner
                 const byOwner = {};
-                this.planets.filter(p => p.owner && !myIdentities.has(p.owner)).forEach(p => {
+                this.planets.filter(p =>
+                    p.owner && !myIdentities.has(p.owner) &&
+                    (this._isMyPlanet(p) || this.isInSensorRange(p.position.x, p.position.y))
+                ).forEach(p => {
                     const key = p.owner;
                     if (!byOwner[key]) byOwner[key] = { name: key, planets: [], isNPC: true, difficulty: null, race: '', powerRating: 0 };
                     byOwner[key].planets.push(p);
@@ -14162,8 +14287,9 @@ const SHIP_IMAGE_DATA = {
                 const viralPlanetStyle = (isOwned && isViral) ? 'box-shadow: 0 0 12px rgba(139,0,0,0.5); background: linear-gradient(135deg, rgba(50,0,0,0.6), var(--bg-tertiary));' : '';
                 const isUnderSiege = planet.siegedBy && planet.siegedUntil > Date.now();
                 const siegeExtraClass = isUnderSiege ? ' under-siege' : '';
+                const homeClass = (type === 'owned' && Number(planet.id) === this.homePlanetId) ? ' is-home' : '';
                 return `
-                    <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}${siegeExtraClass}" 
+                    <div class="planet-card ${this.selectedPlanet?.id === planet.id ? 'selected' : ''}${siegeExtraClass}${homeClass}" 
                          data-planet-id="${planet.id}"
                          onclick="window.game.selectPlanetForBuilding(game.planets.find(p => p.id === ${planet.id})); game.selectPlanet(game.planets.find(p => p.id === ${planet.id}));"
                          onmouseenter="game.showPlanetImageModal('${planet.type}')"
@@ -14704,6 +14830,241 @@ const SHIP_IMAGE_DATA = {
 
 
 
+
+
+            // ═══════════════════════════════════════════════
+            //  HOME PLANET SYSTEM
+            // ═══════════════════════════════════════════════
+
+            // Smoothly pan+zoom the map to a world-coordinate position
+            panToWorld(worldX, worldY, targetZoom, durationMs) {
+                if (!this.canvas) return;
+                targetZoom  = targetZoom  || 1.2;
+                durationMs  = durationMs  || 800;
+
+                const startZoom = this.mapZoom;
+                const startPanX = this.mapPan.x;
+                const startPanY = this.mapPan.y;
+
+                // After zoom, pan so that worldX/worldY lands at canvas centre
+                const endPanX = -worldX;
+                const endPanY = -worldY;
+
+                const startTime = performance.now();
+                const ease = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t; // ease-in-out
+
+                const animate = (now) => {
+                    const t = Math.min(1, (now - startTime) / durationMs);
+                    const e = ease(t);
+                    this.mapZoom  = startZoom + (targetZoom - startZoom) * e;
+                    this.mapPan.x = startPanX + (endPanX - startPanX) * e;
+                    this.mapPan.y = startPanY + (endPanY - startPanY) * e;
+                    if (t < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        // Guarantee final frame renders at exact target values
+                        this.mapZoom  = targetZoom;
+                        this.mapPan.x = endPanX;
+                        this.mapPan.y = endPanY;
+                        this.updateMapFrame();
+                    }
+                };
+                requestAnimationFrame(animate);
+                if (!this.mapAnimating) this.startMapAnimation();
+            }
+
+            // Set the home planet (called from planet card button or auto on first play)
+            setHomePlanet(planetId) {
+                const planet = this.planets.find(p => Number(p.id) === Number(planetId));
+                if (!planet) return;
+
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+                if (planet.owner !== myRace && planet.owner !== myUser) {
+                    this.showNotification('⚠️ You can only set a planet you own as home.');
+                    return;
+                }
+
+                this.homePlanetId = Number(planetId);
+                this.saveGameState();
+
+                this.showNotification(`🏠 ${planet.name} is now your home world!`);
+                this.renderOwnedPlanets();
+                this.updateMap();
+            }
+
+            // Fly the camera to the home planet
+            goHome() {
+                let target = null;
+
+                // Use saved home planet if set
+                if (this.homePlanetId) {
+                    target = this.planets.find(p => Number(p.id) === this.homePlanetId);
+                }
+
+                // Fallback: first owned planet
+                if (!target) {
+                    const myRace = this.selectedRace?.name;
+                    const myUser = this.playerData?.username;
+                    target = this.planets.find(p =>
+                        p.owner && (p.owner === myRace || p.owner === myUser)
+                    );
+                }
+
+                if (!target) {
+                    this.showNotification('⚠️ No home planet set yet.');
+                    return;
+                }
+
+                this.panToWorld(target.position.x, target.position.y, 8, 900);
+            }
+
+            // Show the home planet chooser modal (triggered from planet card)
+            showSetHomeModal() {
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+                const owned  = this.planets.filter(p =>
+                    p.owner && (p.owner === myRace || p.owner === myUser)
+                ).sort((a, b) => a.name.localeCompare(b.name));
+
+                if (owned.length === 0) {
+                    this.showNotification('⚠️ You have no planets to set as home.');
+                    return;
+                }
+
+                const modal = document.createElement('div');
+                modal.style.cssText = `position:fixed;top:0;left:0;width:100%;height:100%;
+                    background:rgba(0,0,0,0.92);z-index:10001;display:flex;
+                    align-items:center;justify-content:center;animation:fadeIn 0.25s;`;
+                modal.innerHTML = `
+                    <div style="max-width:480px;width:90%;background:var(--bg-secondary);
+                         border:2px solid #ffd700;border-radius:12px;padding:24px;
+                         max-height:75vh;overflow-y:auto;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                            <div style="font-size:20px;font-weight:900;color:#ffd700;">🏠 Choose Home World</div>
+                            <button onclick="this.closest('div[style*=fixed]').remove()"
+                                style="background:rgba(255,0,0,0.1);border:1px solid #ff4a4a;
+                                       border-radius:4px;color:#ff4a4a;padding:5px 12px;cursor:pointer;">✕</button>
+                        </div>
+                        <div style="font-size:11px;color:var(--text-secondary);margin-bottom:14px;">
+                            Your home world is where the camera starts and where the 🏠 button takes you.
+                            You can change it at any time.
+                        </div>
+                        <div id="homePlanetList">
+                            ${owned.map(p => {
+                                const isHome = Number(p.id) === this.homePlanetId;
+                                const ti     = this.getPlanetTierInfo(p);
+                                return `<div onclick="window.game.setHomePlanet(${p.id}); this.closest('div[style*=fixed]').remove();"
+                                    style="padding:10px 14px;margin-bottom:7px;border-radius:7px;cursor:pointer;
+                                           border:2px solid ${isHome ? '#ffd700' : 'var(--border-color)'};
+                                           background:${isHome ? 'rgba(255,215,0,0.08)' : 'var(--bg-tertiary)'};
+                                           transition:all 0.15s;"
+                                    onmouseover="this.style.borderColor='#ffd700';this.style.background='rgba(255,215,0,0.06)'"
+                                    onmouseout="this.style.borderColor='${isHome ? '#ffd700' : 'var(--border-color)'}';this.style.background='${isHome ? 'rgba(255,215,0,0.08)' : 'var(--bg-tertiary)'}'">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                                        <div style="font-weight:700;">${isHome ? '🏠 ' : ''}${p.name}</div>
+                                        <div class="tier-badge tier-${ti.tier}" style="margin:0;">${ti.bonus.icon} Tier ${ti.bonus.label}</div>
+                                    </div>
+                                    <div style="font-size:10px;color:var(--text-secondary);margin-top:3px;">
+                                        🔩${(p.resources?.metal||0).toLocaleString()}
+                                        &nbsp;⚡${(p.resources?.he3||0).toLocaleString()}
+                                        &nbsp;🌾${(p.resources?.food||0).toLocaleString()}
+                                        &nbsp;📡${Math.round(this.getSensorRadius(p)).toLocaleString()} sensor
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+                document.body.appendChild(modal);
+            }
+
+            // ═══════════════════════════════════════════════
+            //  FOG OF WAR
+            // ═══════════════════════════════════════════════
+
+            // Base sensor radius per owned planet in world units
+            // Buildings extend this: Science Lab +20% per level, Space Station +50% per level
+
+            // True if this planet is owned by the current player
+            _isMyPlanet(planet) {
+                const myRace = this.selectedRace?.name;
+                const myUser = this.playerData?.username;
+                if (!planet.owner) return false;
+                return planet.owner === myRace
+                    || planet.owner === myUser
+                    || planet.ownerUsername === myUser
+                    || planet.ownerUsername === myRace;
+            }
+
+            getSensorRadius(planet) {
+                const BASE_RADIUS = 1200;
+                let mult = 1.0;
+                if (planet.buildings) {
+                    mult += (planet.buildings['Science Lab']     || 0) * 0.20;
+                    mult += (planet.buildings['Space Station']   || 0) * 0.50;
+                    mult += (planet.buildings['Research Outpost']|| 0) * 0.10;
+                }
+                return BASE_RADIUS * mult;
+            }
+
+            // Returns true if worldX/worldY is within sensor range of any player-owned planet
+            isInSensorRange(worldX, worldY) {
+                for (const p of this.planets) {
+                    if (!this._isMyPlanet(p)) continue;
+                    const r = this.getSensorRadius(p);
+                    const dx = worldX - p.position.x;
+                    const dy = worldY - p.position.y;
+                    if (dx * dx + dy * dy <= r * r) return true;
+                }
+                return false;
+            }
+
+            // Draw fog of war overlay on the canvas
+            drawFogOfWar(ctx, canvas, centerX, centerY) {
+                const ownedPlanets = this.planets.filter(p => this._isMyPlanet(p));
+                if (ownedPlanets.length === 0) return;
+
+                // Build a clip region that is the INVERSE of all sensor circles:
+                // Fill the whole canvas with fog, but use an even-odd clip path
+                // that subtracts each sensor circle — no compositing required.
+                ctx.save();
+
+                // Define clip path: outer canvas rect + all sensor holes (even-odd rule
+                // means overlapping regions cancel out, punching holes in the fog)
+                ctx.beginPath();
+                ctx.rect(0, 0, canvas.width, canvas.height);
+                ownedPlanets.forEach(planet => {
+                    const sx = centerX + (planet.position.x + this.mapPan.x) * this.mapZoom;
+                    const sy = centerY + (planet.position.y + this.mapPan.y) * this.mapZoom;
+                    const sr = this.getSensorRadius(planet) * this.mapZoom;
+                    ctx.moveTo(sx + sr, sy);
+                    ctx.arc(sx, sy, sr, 0, Math.PI * 2, false);
+                });
+                ctx.clip('evenodd');
+
+                // Fill fog only where clip allows (outside sensor circles)
+                ctx.fillStyle = 'rgba(0, 0, 12, 0.93)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+
+                // Soft blue glow at sensor edge — drawn WITHOUT clip
+                ctx.save();
+                ownedPlanets.forEach(planet => {
+                    const sx = centerX + (planet.position.x + this.mapPan.x) * this.mapZoom;
+                    const sy = centerY + (planet.position.y + this.mapPan.y) * this.mapZoom;
+                    const sr = this.getSensorRadius(planet) * this.mapZoom;
+                    const edgeGrad = ctx.createRadialGradient(sx, sy, sr * 0.82, sx, sy, sr * 1.08);
+                    edgeGrad.addColorStop(0,   'rgba(0, 150, 255, 0)');
+                    edgeGrad.addColorStop(0.5, 'rgba(0, 150, 255, 0.07)');
+                    edgeGrad.addColorStop(1,   'rgba(0, 150, 255, 0)');
+                    ctx.fillStyle = edgeGrad;
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, sr * 1.08, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.restore();
+            }
+
             // ═══════════════════════════════════════════════
             //  RELIC WORLD SYSTEM
             // ═══════════════════════════════════════════════
@@ -14771,8 +15132,8 @@ const SHIP_IMAGE_DATA = {
                         },
                         population: 4000 + Math.floor(Math.random() * 2000),
                         position: {
-                            x: Math.random() * 700 - 350,
-                            y: Math.random() * 500 - 250,
+                            x: Math.random() * 7000 - 3500,
+                            y: Math.random() * 5000 - 2500,
                         },
                         owner:    null,
                         scouted:  false,
@@ -14942,16 +15303,16 @@ const SHIP_IMAGE_DATA = {
             // World space: x in [-400, 400], y in [-300, 300]
             getConstellations() {
                 return [
-                    { id: 'ardent_belt',     name: 'Ardent Belt',      x: -260, y: -180, radius: 130, color: '#ff6b35', icon: '🔥' },
-                    { id: 'vex_cluster',     name: 'Vex Cluster',      x:  220, y: -150, radius: 120, color: '#a855f7', icon: '⚡' },
-                    { id: 'solaris_reach',   name: 'Solaris Reach',    x:    0, y:  -80, radius: 110, color: '#ffd700', icon: '☀️' },
-                    { id: 'iron_expanse',    name: 'Iron Expanse',     x: -200, y:   80, radius: 115, color: '#94a3b8', icon: '⛏️' },
-                    { id: 'nebula_crown',    name: 'Nebula Crown',     x:  240, y:  120, radius: 120, color: '#06b6d4', icon: '🌌' },
-                    { id: 'darkrift_margin', name: 'Darkrift Margin',  x:   30, y:  200, radius: 100, color: '#f43f5e', icon: '🕳️' },
-                    { id: 'verdant_arc',     name: 'Verdant Arc',      x: -320, y:   10, radius: 105, color: '#22c55e', icon: '🌿' },
-                    { id: 'crystalline_rim', name: 'Crystalline Rim',  x:  340, y:   20, radius: 100, color: '#38bdf8', icon: '💎' },
-                    { id: 'ashen_void',      name: 'Ashen Void',       x: -60,  y:  240, radius: 95,  color: '#78716c', icon: '💀' },
-                    { id: 'gold_nexus',      name: 'Gold Nexus',       x:  100, y: -230, radius: 100, color: '#eab308', icon: '✨' },
+                    { id: 'ardent_belt',     name: 'Ardent Belt',      x: -2600, y: -1800, radius: 1300, color: '#ff6b35', icon: '🔥' },
+                    { id: 'vex_cluster',     name: 'Vex Cluster',      x:  2200, y: -1500, radius: 1200, color: '#a855f7', icon: '⚡' },
+                    { id: 'solaris_reach',   name: 'Solaris Reach',    x:     0, y:  -800, radius: 1100, color: '#ffd700', icon: '☀️' },
+                    { id: 'iron_expanse',    name: 'Iron Expanse',     x: -2000, y:   800, radius: 1150, color: '#94a3b8', icon: '⛏️' },
+                    { id: 'nebula_crown',    name: 'Nebula Crown',     x:  2400, y:  1200, radius: 1200, color: '#06b6d4', icon: '🌌' },
+                    { id: 'darkrift_margin', name: 'Darkrift Margin',  x:   300, y:  2000, radius: 1000, color: '#f43f5e', icon: '🕳️' },
+                    { id: 'verdant_arc',     name: 'Verdant Arc',      x: -3200, y:   100, radius: 1050, color: '#22c55e', icon: '🌿' },
+                    { id: 'crystalline_rim', name: 'Crystalline Rim',  x:  3400, y:   200, radius: 1000, color: '#38bdf8', icon: '💎' },
+                    { id: 'ashen_void',      name: 'Ashen Void',       x:  -600, y:  2400, radius:  950, color: '#78716c', icon: '💀' },
+                    { id: 'gold_nexus',      name: 'Gold Nexus',       x:  1000, y: -2300, radius: 1000, color: '#eab308', icon: '✨' },
                 ];
             }
 
@@ -15012,16 +15373,20 @@ const SHIP_IMAGE_DATA = {
             }
 
             // +20% production bonus for all player planets inside a controlled constellation
+            // Caches control data for 10s to avoid O(planets × constellations) on every resource tick
             getConstellationProductionBonus(planet) {
-                const myRace = this.selectedRace?.name;
-                const myUser = this.playerData?.username;
-                if (!planet.owner || (planet.owner !== myRace && planet.owner !== myUser)) return 1.0;
+                if (!this._isMyPlanet(planet)) return 1.0;
+
+                const now = Date.now();
+                if (!this._constellationControlCache || now - this._constellationControlCacheTime > 10000) {
+                    this._constellationControlCache = this.getConstellationControl();
+                    this._constellationControlCacheTime = now;
+                }
 
                 const c = this.getPlanetConstellation(planet);
                 if (!c) return 1.0;
 
-                // Find control info for this constellation
-                const control = this.getConstellationControl().find(cc => cc.id === c.id);
+                const control = this._constellationControlCache.find(cc => cc.id === c.id);
                 if (control && control.isPlayerControlled) return 1.20;
                 return 1.0;
             }
@@ -15157,9 +15522,17 @@ const SHIP_IMAGE_DATA = {
             }
 
             // Apply tier production bonus — called from generateResources
+            // Uses a per-planet cache keyed on building total so it only recalculates when buildings change
             getTierProductionMultiplier(planet) {
-                if (!planet.owner || planet.owner !== this.selectedRace?.name) return 1.0;
-                return this.getPlanetTierInfo(planet).bonus.production;
+                if (!this._isMyPlanet(planet)) return 1.0;
+                const buildingTotal = planet.buildings
+                    ? Object.values(planet.buildings).reduce((s, v) => s + v, 0) : 0;
+                const cacheKey = `${planet.id}_${buildingTotal}`;
+                if (!this._tierCache) this._tierCache = {};
+                if (!this._tierCache[cacheKey]) {
+                    this._tierCache[cacheKey] = this.getPlanetTierInfo(planet).bonus.production;
+                }
+                return this._tierCache[cacheKey];
             }
 
             // Announce Tier IV achievement server-wide
@@ -15609,29 +15982,57 @@ const SHIP_IMAGE_DATA = {
                         this.showNotification(`✨ Victory! ${target.name} captured! (Lost ${Object.values(attackerLosses).reduce((s,c)=>s+c,0)} ships)`);
 
                         // Viral Race: attempt infect on enemy defending ships
-                        if (this.isViralRace() && target.fleets) {
+                        if (this.isViralRace()) {
                             const allRaceShips = Object.values(SHIP_CLASSES).flat();
                             const viralShips   = SHIP_CLASSES['The Viral Race'] || [];
+
+                            // Count infecting ships — any viral ship with infectAbility
                             let infectCount = 0;
-                            viralShips.filter(s => s.infectAbility).forEach(s => { infectCount += (this.ships[s.name]?.count || 0); });
-                            target.fleets.forEach(fleet => {
-                                if (fleet && fleet.stacks) {
-                                    fleet.stacks.forEach(stack => {
-                                        if (stack.shipName && stack.count > 0) {
-                                            const tmpl = allRaceShips.find(s => s.name === stack.shipName);
-                                            this.initInfectData();
-                                            // Run infect and capture result for AAR
-                                            const before = this.capturedShips[stack.shipName] || 0;
-                                            this.attemptInfect(stack.shipName, tmpl || { name: stack.shipName }, infectCount);
-                                            const after  = this.capturedShips[stack.shipName] || 0;
-                                            const gained = after - before;
-                                            infectResults.push({ name: stack.shipName, captured: gained });
-                                            if (after >= 3 && !this.reverseEngineered[stack.shipName]) {
-                                                viralGained.push({ name: stack.shipName, total: after });
-                                            }
-                                        }
-                                    });
+                            viralShips.filter(s => s.infectAbility).forEach(s => {
+                                infectCount += (this.ships[s.name]?.count || 0);
+                            });
+                            // Also count ships sent in the attack force
+                            Object.entries(attackForce).forEach(([name, qty]) => {
+                                const vs = viralShips.find(s => s.name === name);
+                                if (vs && vs.infectAbility) infectCount = Math.max(infectCount, qty);
+                            });
+
+                            // Helper: attempt infect on a named ship type
+                            const tryInfect = (shipName, count) => {
+                                if (!shipName || !count || count <= 0) return;
+                                const tmpl = allRaceShips.find(s => s.name === shipName);
+                                this.initInfectData();
+                                const before = this.capturedShips[shipName] || 0;
+                                this.attemptInfect(shipName, tmpl || { name: shipName }, infectCount);
+                                const after  = this.capturedShips[shipName] || 0;
+                                const gained = after - before;
+                                if (gained > 0) infectResults.push({ name: shipName, captured: gained });
+                                if (after >= 3 && !this.reverseEngineered[shipName]) {
+                                    viralGained.push({ name: shipName, total: after });
                                 }
+                            };
+
+                            // Source 1: player/NPC fleets garrisoned on the planet
+                            if (target.fleets) {
+                                target.fleets.forEach(fleet => {
+                                    if (fleet && fleet.stacks) {
+                                        fleet.stacks.forEach(stack => {
+                                            tryInfect(stack.shipName || stack.shipType, stack.count);
+                                        });
+                                    }
+                                });
+                            }
+
+                            // Source 2: bot garrison (object keyed by ship type name)
+                            if (target.botGarrison) {
+                                Object.entries(target.botGarrison).forEach(([shipType, data]) => {
+                                    tryInfect(shipType, data.count || 1);
+                                });
+                            }
+
+                            // Source 3: defenderDestroyed — ships that fought and lost
+                            Object.entries(defenderDestroyed).forEach(([shipName, qty]) => {
+                                tryInfect(shipName, qty);
                             });
                         }
                     } else {
@@ -18430,6 +18831,7 @@ const SHIP_IMAGE_DATA = {
             }
             
             updateResearch() {
+              try {
                 // Process ship research queue
                 if (this.researchQueue.length === 0) return;
                 
@@ -18470,6 +18872,9 @@ const SHIP_IMAGE_DATA = {
                 
                 this.updateResearchQueue();
                 this.renderResearch();
+              } catch(e) {
+                console.error('❌ updateResearch error:', e);
+              }
             }
             
             updateResearchQueue() {
@@ -19008,6 +19413,7 @@ const SHIP_IMAGE_DATA = {
             // ========== END VIRAL INFECT SYSTEM ==========
 
             updateBuildQueue() {
+              try {
                 if (this.buildQueue.length === 0) return;
                 
                 this.buildQueue = this.buildQueue.map(build => {
@@ -19051,6 +19457,9 @@ const SHIP_IMAGE_DATA = {
                 }).filter(b => b !== null);
                 
                 this.renderShipBuildList();
+              } catch(e) {
+                console.error('❌ updateBuildQueue error:', e);
+              }
             }
             
             // Planet Management Methods
@@ -19597,6 +20006,7 @@ const SHIP_IMAGE_DATA = {
             }
             
             generateResources() {
+              try {
                 const ownedPlanets = this.planets.filter(p => p.owner === this.selectedRace.name);
                 
                 // Debug: Log once every 10 seconds (600 calls)
@@ -19792,6 +20202,9 @@ const SHIP_IMAGE_DATA = {
                 this.resources.population = Math.min(Math.max(0, this.resources.population), MAX_RESOURCE);
                 
                 this.updateResources();
+              } catch(e) {
+                console.error('❌ generateResources error:', e);
+              }
             }
             
             updateResources() {
@@ -19866,21 +20279,21 @@ const SHIP_IMAGE_DATA = {
             
             
             zoomIn() {
-                this.mapZoom = Math.min(this.mapZoom * 1.2, 3);
+                this.mapZoom = Math.min(this.mapZoom * 1.2, 50);
                 if (!this.mapAnimating) {
                     this.startMapAnimation();
                 }
             }
             
             zoomOut() {
-                this.mapZoom = Math.max(this.mapZoom / 1.2, 0.5);
+                this.mapZoom = Math.max(this.mapZoom / 1.2, 0.02);
                 if (!this.mapAnimating) {
                     this.startMapAnimation();
                 }
             }
             
             resetView() {
-                this.mapZoom = 1;
+                this.mapZoom = 0.08;  // Start zoomed out — galaxy is 10× larger (goHome will fly to home planet)
                 this.mapPan = { x: 0, y: 0 };
                 this.updateMap();
             }
@@ -24273,6 +24686,30 @@ const SHIP_IMAGE_DATA = {
             border-radius: 8px; background: rgba(255,215,0,0.12);
             border: 1px solid rgba(255,215,0,0.3); color: #ffd700;
         }
+
+        /* ===== HOME PLANET SYSTEM ===== */
+        .home-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            padding: 2px 8px; border-radius: 10px; font-size: 9px; font-weight: 800;
+            letter-spacing: 0.5px; background: rgba(255,215,0,0.15);
+            border: 1px solid #ffd700; color: #ffd700; margin-top: 3px;
+        }
+        .map-btn-home {
+            width: 40px; height: 40px;
+            background: rgba(255,215,0,0.12);
+            border: 1px solid #ffd700;
+            border-radius: 6px; color: #ffd700;
+            font-size: 18px; cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s;
+        }
+        .map-btn-home:hover { background: rgba(255,215,0,0.28); transform: scale(1.1); }
+        @keyframes homePing {
+            0%   { box-shadow: 0 0 0 0 rgba(255,215,0,0.6); }
+            70%  { box-shadow: 0 0 0 12px rgba(255,215,0,0); }
+            100% { box-shadow: 0 0 0 0 rgba(255,215,0,0); }
+        }
+        .planet-card.is-home { border-color: #ffd700 !important; }
 
         /* ===== PLANET TIER SYSTEM ===== */
         .tier-badge {
