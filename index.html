@@ -15116,7 +15116,7 @@ const SHIP_IMAGE_DATA = {
                         type: 'Balanced', // visually rich type
                         isRelicWorld: true,
                         relicUnlockStep: 0, // 0=none, 1=scouted, 2=excavated, 3=decrypted(=claimable)
-                        relicExpiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
+                        relicExpiresAt: Date.now() + 3 * 60 * 60 * 1000, // 3 hours
                         // Pre-built Ancient structures
                         buildings: {
                             'Mining Complex':  3,
@@ -15148,8 +15148,8 @@ const SHIP_IMAGE_DATA = {
                     chatManager.addMessage('SYSTEM', `🔮 ANCIENT DETECTION: ${toSpawn} Relic World${toSpawn > 1 ? 's have' : ' has'} been detected in deep space. Scouting parties report unusual energy readings…`, 'system');
                 }
 
-                // Schedule next weekly check (7 days)
-                this._relicRespawnTimer = setTimeout(() => this.spawnRelicWorlds(), 7 * 24 * 60 * 60 * 1000);
+                // Schedule next respawn check (3 hours)
+                this._relicRespawnTimer = setTimeout(() => this.spawnRelicWorlds(), 3 * 60 * 60 * 1000);
             }
 
             // Step 1 of 3: Scout the relic (called from scout button on the card)
