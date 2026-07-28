@@ -160,6 +160,78 @@
             50% { box-shadow: 0 0 10px rgba(139,0,0,0.6); }
         }
 
+        /* ===== GALACTIC HAZARD EVENTS ===== */
+        #hazardEventBanner {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9500;
+            background: rgba(10,5,30,0.97);
+            border-radius: 12px;
+            padding: 14px 22px;
+            min-width: 360px;
+            max-width: 560px;
+            text-align: center;
+            animation: hazardSlideIn 0.5s cubic-bezier(0.34,1.56,0.64,1);
+            box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+        }
+        @keyframes hazardSlideIn {
+            from { opacity:0; transform:translateX(-50%) translateY(-24px) scale(0.95); }
+            to   { opacity:1; transform:translateX(-50%) translateY(0)     scale(1);    }
+        }
+        .hazard-banner-title { font-family:'Orbitron',sans-serif; font-size:14px; font-weight:900; letter-spacing:1px; margin-bottom:4px; }
+        .hazard-banner-sub   { font-size:11px; color:var(--text-secondary); margin-bottom:10px; line-height:1.5; }
+        .hazard-banner-timer { font-size:10px; font-weight:700; letter-spacing:0.5px; }
+        .hazard-dismiss-btn  { margin-top:10px; padding:5px 18px; border-radius:5px; font-size:10px; font-weight:700;
+                               cursor:pointer; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:var(--text-secondary); }
+        .hazard-dismiss-btn:hover { background:rgba(255,255,255,0.12); }
+
+        /* Active hazard indicator on map */
+        #hazardMapIndicator {
+            position:absolute; top:10px; right:10px; z-index:10;
+            background:rgba(10,5,30,0.92); border-radius:8px;
+            padding:7px 12px; font-size:10px; font-weight:700;
+            border:1px solid; backdrop-filter:blur(6px);
+            cursor:pointer; transition:all 0.2s;
+            max-width:200px;
+        }
+        #hazardMapIndicator:hover { background:rgba(20,10,50,0.98); }
+
+        /* ===== RACE-SPECIFIC TECH TREE ===== */
+        .race-tech-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+        }
+        .race-tech-item:hover { border-color: var(--accent-primary); }
+        .race-tech-item.unlocked { border-color: #00ff88; background: rgba(0,255,136,0.04); }
+        .race-tech-item.locked   { opacity: 0.55; }
+        .race-tech-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+        .race-tech-name   { font-weight: 800; font-size: 13px; }
+        .race-tech-badge  {
+            font-size: 9px; font-weight: 800; padding: 2px 8px; border-radius: 10px;
+            letter-spacing: 0.5px; white-space: nowrap;
+        }
+        .race-tech-effect { font-size: 11px; color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5; }
+        .race-tech-cost   { font-size: 10px; color: var(--text-secondary); margin-bottom: 8px; }
+        .race-tech-btn {
+            width: 100%; padding: 8px; border-radius: 6px; font-size: 11px;
+            font-weight: 700; cursor: pointer; transition: all 0.2s;
+        }
+        .race-tech-btn.can-unlock {
+            background: linear-gradient(135deg, rgba(0,217,255,0.15), rgba(0,150,200,0.15));
+            border: 1.5px solid var(--accent-primary); color: var(--accent-primary);
+        }
+        .race-tech-btn.can-unlock:hover { background: rgba(0,217,255,0.28); }
+        .race-tech-btn.unlocked-btn {
+            background: rgba(0,255,136,0.1); border: 1.5px solid #00ff88; color: #00ff88; cursor: default;
+        }
+        .race-tech-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
         /* ── Race Startup Popup ─────────────────────────────────────── */
         #raceStartupOverlay {
             position: fixed;
@@ -5273,6 +5345,9 @@
                 <button class="research-tab" onclick="window.game.switchResearchTab('rankings')" id="researchTabRankings" style="flex: 1; min-width: 70px;">
                     Rankings
                 </button>
+                <button class="research-tab" onclick="window.game.switchResearchTab('raceTech')" id="researchTabRaceTech" style="flex: 1; min-width: 70px;">
+                    🧬 Race Tech
+                </button>
             </div>
             
             <!-- Active Research View -->
@@ -5350,6 +5425,14 @@
                 </div>
             </div>
             
+            <!-- Race Tech View -->
+            <div id="researchViewRaceTech" class="research-view" style="display: none;">
+                <div class="detail-section">
+                    <div class="section-title" id="raceTechTitle">🧬 Race Technologies</div>
+                    <div id="raceTechList"></div>
+                </div>
+            </div>
+
             <!-- Rankings View -->
             <div id="researchViewRankings" class="research-view" style="display: none;">
                 <div class="detail-section">
@@ -12909,6 +12992,37 @@ const SHIP_IMAGE_DATA = {
                         this._lastAlienFaction = playerData.gameState.lastAlienFaction;
                     }
 
+                    if (playerData.gameState.hazardFlags) {
+                        this._hazardFlags = playerData.gameState.hazardFlags;
+                    }
+                    if (playerData.gameState.activeHazardEvent) {
+                        const saved = playerData.gameState.activeHazardEvent;
+                        if (Date.now() < saved.endsAt) {
+                            // Event still running — restore it
+                            const defs = this._hazardEventDefinitions ? this._hazardEventDefinitions() : [];
+                            const def  = defs.find(d => d.id === saved.id);
+                            if (def) {
+                                this._activeHazardEvent = { ...def, ...saved, startedAt: Date.now() };
+                                try { def.onStart(this); } catch(e) {}
+                                setTimeout(() => this._updateHazardMapIndicator(), 2000);
+                                this._hazardEndTimer = setTimeout(() => this._endHazardEvent(def), saved.endsAt - Date.now());
+                            }
+                        }
+                    }
+
+                    if (playerData.gameState.unlockedRaceTechs) {
+                        this._unlockedRaceTechs = playerData.gameState.unlockedRaceTechs;
+                    }
+                    if (playerData.gameState.raceTechFlags) {
+                        this._raceTechFlags = playerData.gameState.raceTechFlags;
+                        // Re-apply tech effects so they are active after reload
+                        const raceTechDefs = this.RACE_TECHS()[this.selectedRace?.name] || [];
+                        Object.keys(this._unlockedRaceTechs || {}).forEach(id => {
+                            const tech = raceTechDefs.find(t => t.id === id);
+                            if (tech) tech.apply(this);
+                        });
+                    }
+
                     // Restore relic unlock progress on planets that are already in the world
                     if (playerData.gameState.relicWorlds) {
                         playerData.gameState.relicWorlds.forEach(rw => {
@@ -13048,6 +13162,16 @@ const SHIP_IMAGE_DATA = {
                     unlockedShips: this.unlockedShips || [],
                     homePlanetId: this.homePlanetId || null,
                     lastAlienFaction: this._lastAlienFaction || null,
+                    activeHazardEvent: this._activeHazardEvent ? {
+                        id: this._activeHazardEvent.id,
+                        endsAt: this._activeHazardEvent.endsAt,
+                        shortDesc: this._activeHazardEvent.shortDesc,
+                        icon: this._activeHazardEvent.icon,
+                        color: this._activeHazardEvent.color,
+                    } : null,
+                    hazardFlags: this._hazardFlags || {},
+                    unlockedRaceTechs: this._unlockedRaceTechs || {},
+                    raceTechFlags: this._raceTechFlags || {},
                     sieges: this.sieges || [],
                     relicWorlds: this.planets.filter(p => p.isRelicWorld).map(p => ({
                         id: p.id, relicUnlockStep: p.relicUnlockStep || 0,
@@ -13117,6 +13241,9 @@ const SHIP_IMAGE_DATA = {
 
                     // Spawn relic worlds on first load (delayed so planets array is ready)
                     setTimeout(() => this.spawnRelicWorlds(), 3000);
+
+                    // Schedule first galactic hazard event (first one 1-3 hours in)
+                    setTimeout(() => this._scheduleNextHazardEvent(), (60 + Math.random() * 120) * 60 * 1000);
 
                     // Schedule first alien encounter (30–90 minutes after login for first encounter)
                     setTimeout(() => this._scheduleAlienEncounter(), 30 * 60 * 1000 + Math.random() * 60 * 60 * 1000);
@@ -13372,7 +13499,10 @@ const SHIP_IMAGE_DATA = {
                 clearInterval(this.buildInterval);
                 clearInterval(this.serverInfoInterval);
                 clearInterval(this.autoSaveInterval);
-                if (this.worldBossHUDInterval) clearInterval(this.worldBossHUDInterval);
+                if (this.worldBossHUDInterval)    clearInterval(this.worldBossHUDInterval);
+                if (this._hazardEventTimer)         clearTimeout(this._hazardEventTimer);
+                if (this._hazardEndTimer)           clearTimeout(this._hazardEndTimer);
+                if (this._pirateSurgeInterval)      clearInterval(this._pirateSurgeInterval);
                 // Stop boss auto-waves
                 if (this._bossAutoWaveFleets) {
                     Object.keys(this._bossAutoWaveFleets).forEach(idx => clearInterval(this._bossAutoWaveFleets[idx]));
@@ -14809,7 +14939,13 @@ const SHIP_IMAGE_DATA = {
                 
                 const planetCount = this.planets.length;
                 const baseTravelTime = Math.floor((5 + (planetCount * 0.5)) * 15); // x15 scout time
-                const travelTime = Math.max(30, baseTravelTime);
+                // Ion Storm hazard — double travel time if target is in the stormed constellation
+                const _stormConst = this._hazardFlags?.ionStorm;
+                const _inStorm = _stormConst && (() => {
+                    const c = this.getPlanetConstellation(target);
+                    return c && c.id === _stormConst;
+                })();
+                const travelTime = Math.max(30, _inStorm ? baseTravelTime * 2 : baseTravelTime);
                 const he3Cost = Math.floor((200 + (planetCount * 20)) * 5); // x5 HE3 cost
                 
                 if (this.resources.he3 < he3Cost) {
@@ -15308,6 +15444,473 @@ const SHIP_IMAGE_DATA = {
             }
 
 
+
+
+            // ═══════════════════════════════════════════════════════════
+            //  GALACTIC HAZARD EVENT SYSTEM
+            // ═══════════════════════════════════════════════════════════
+
+            _hazardEventDefinitions() {
+                const constellations = this.getConstellations ? this.getConstellations() : [];
+                const randConst = constellations.length
+                    ? constellations[Math.floor(Math.random() * constellations.length)]
+                    : { name: 'Unknown Sector', id: 'none' };
+                const resources = ['metal', 'he3', 'food', 'credits'];
+                const randRes = resources[Math.floor(Math.random() * resources.length)];
+                const randResLabel = { metal:'🔩 Metal', he3:'⚡ HE3', food:'🌾 Food', credits:'💰 Credits' }[randRes];
+
+                return [
+                    {
+                        id: 'solar_flare',
+                        name: 'Solar Flare',
+                        icon: '☀️',
+                        color: '#ff6b35',
+                        duration: 4 * 60 * 60 * 1000,
+                        description: `Intense solar radiation is disrupting shield arrays across the galaxy. All ship and planet shields are reduced to 50% effectiveness for 4 hours — battles are now decided by raw firepower alone.`,
+                        shortDesc: `All shields 50% · Raw firepower battles`,
+                        announcement: `☀️ SOLAR FLARE INCOMING: Intense radiation will disable shield arrays galaxy-wide in 15 minutes. Reinforce your defenses with structures — shield-heavy ships are vulnerable.`,
+                        onStart: (game) => { game._hazardFlags = game._hazardFlags || {}; game._hazardFlags.solarFlare = true; },
+                        onEnd:   (game) => { game._hazardFlags = game._hazardFlags || {}; game._hazardFlags.solarFlare = false; },
+                    },
+                    {
+                        id: 'ion_storm',
+                        name: 'Ion Storm',
+                        icon: '⚡',
+                        color: '#a855f7',
+                        duration: 6 * 60 * 60 * 1000,
+                        stormConstellation: randConst,
+                        description: `A massive ion storm has engulfed the ${randConst.name} constellation. Fleet travel time is doubled for all commanders operating in or through this sector for the next 6 hours.`,
+                        shortDesc: `Fleet travel ×2 in ${randConst.name}`,
+                        announcement: `⚡ ION STORM FORMING: The ${randConst.name} constellation will experience severe ion interference in 15 minutes. Fleet travel times doubled. Plan your movements accordingly.`,
+                        onStart: (game) => { game._hazardFlags = game._hazardFlags || {}; game._hazardFlags.ionStorm = randConst.id; },
+                        onEnd:   (game) => { game._hazardFlags = game._hazardFlags || {}; game._hazardFlags.ionStorm = null; },
+                    },
+                    {
+                        id: 'resource_bloom',
+                        name: 'Resource Bloom',
+                        icon: '💫',
+                        color: '#00ff88',
+                        duration: 3 * 60 * 60 * 1000,
+                        bloomResource: randRes,
+                        description: `A rare cosmic phenomenon has triggered a Resource Bloom across the galaxy. ${randResLabel} production is tripled on all planets for the next 3 hours. Rush to maximise output.`,
+                        shortDesc: `${randResLabel} production ×3 for 3h`,
+                        announcement: `💫 RESOURCE BLOOM DETECTED: ${randResLabel} production will triple galaxy-wide in 15 minutes. Secure your planets and prepare for an economic surge.`,
+                        onStart: (game) => { game._hazardFlags = game._hazardFlags || {}; game._hazardFlags.resourceBloom = randRes; },
+                        onEnd:   (game) => { game._hazardFlags = game._hazardFlags || {}; game._hazardFlags.resourceBloom = null; },
+                    },
+                    {
+                        id: 'ancient_signal',
+                        name: 'Ancient Signal',
+                        icon: '📡',
+                        color: '#c084fc',
+                        duration: 2 * 60 * 60 * 1000,
+                        description: `An ancient broadcast is resonating through subspace, awakening dormant relics. Relic World unlock costs are halved and a 4th Relic World has appeared for the next 2 hours — but it will vanish when the signal fades.`,
+                        shortDesc: `Relic unlock costs 50% · +1 temp Relic World`,
+                        announcement: `📡 ANCIENT SIGNAL DETECTED: Subspace resonance will halve Relic World unlock costs and spawn a bonus Relic World in 15 minutes. Act fast — the signal will not last.`,
+                        onStart: (game) => {
+                            game._hazardFlags = game._hazardFlags || {};
+                            game._hazardFlags.ancientSignal = true;
+                            // Spawn a 4th temporary relic world
+                            if (typeof game.spawnRelicWorlds === 'function') {
+                                const before = (game.planets || []).filter(p => p.isRelicWorld && !p.owner).length;
+                                // Temporarily increase the cap to 4
+                                game._relicCapOverride = 4;
+                                game.spawnRelicWorlds();
+                                game._relicCapOverride = null;
+                            }
+                        },
+                        onEnd: (game) => {
+                            game._hazardFlags = game._hazardFlags || {};
+                            game._hazardFlags.ancientSignal = false;
+                        },
+                    },
+                    {
+                        id: 'pirate_surge',
+                        name: 'Pirate Surge',
+                        icon: '🏴‍☠️',
+                        color: '#f43f5e',
+                        duration: 8 * 60 * 60 * 1000,
+                        description: `Pirate factions are raiding unclaimed worlds near settled territory. Any unclaimed planet within 1,500 units of one of your planets will drain 5% of its nearby settled planet's stored resources every hour until the surge ends or the planet is claimed.`,
+                        shortDesc: `Nearby unclaimed planets drain 5% resources/hr`,
+                        announcement: `🏴‍☠️ PIRATE SURGE WARNING: Raider fleets will begin targeting unclaimed planets near your territory in 15 minutes. Claim planets or reinforce borders to minimise losses.`,
+                        onStart: (game) => {
+                            game._hazardFlags = game._hazardFlags || {};
+                            game._hazardFlags.pirateSurge = true;
+                            // Start pirate drain tick every hour
+                            game._pirateSurgeInterval = setInterval(() => game._tickPirateSurge(), 60 * 60 * 1000);
+                        },
+                        onEnd: (game) => {
+                            game._hazardFlags = game._hazardFlags || {};
+                            game._hazardFlags.pirateSurge = false;
+                            if (game._pirateSurgeInterval) { clearInterval(game._pirateSurgeInterval); game._pirateSurgeInterval = null; }
+                        },
+                    },
+                ];
+            }
+
+            // Drain 5% resources from owned planets near unclaimed ones during Pirate Surge
+            _tickPirateSurge() {
+                if (!this._hazardFlags?.pirateSurge) return;
+                const myPlanets   = this.planets.filter(p => this._isMyPlanet(p));
+                const unclaimed   = this.planets.filter(p => !p.owner);
+                const RAID_RADIUS = 1500;
+                let   totalDrained = false;
+                myPlanets.forEach(mine => {
+                    const nearby = unclaimed.some(u => {
+                        const dx = u.position.x - mine.position.x;
+                        const dy = u.position.y - mine.position.y;
+                        return Math.sqrt(dx*dx + dy*dy) <= RAID_RADIUS;
+                    });
+                    if (!nearby) return;
+                    totalDrained = true;
+                });
+                if (totalDrained) {
+                    this.resources.metal   = Math.max(0, Math.floor((this.resources.metal   || 0) * 0.95));
+                    this.resources.he3     = Math.max(0, Math.floor((this.resources.he3     || 0) * 0.95));
+                    this.resources.credits = Math.max(0, Math.floor((this.resources.credits || 0) * 0.95));
+                    this.updateResources();
+                    chatManager.logEvent(`🏴‍☠️ Pirate Surge: Raiders drained 5% of your stored resources from unclaimed nearby sectors.`, 'error');
+                    this.showNotification(`🏴‍☠️ Pirates raided! 5% of stored resources drained. Claim nearby planets to stop the drain.`);
+                }
+            }
+
+            // Schedule the next galactic hazard event (4–8 hours apart)
+            _scheduleNextHazardEvent() {
+                if (this._hazardEventTimer) clearTimeout(this._hazardEventTimer);
+                const minMs = 4 * 60 * 60 * 1000;
+                const maxMs = 8 * 60 * 60 * 1000;
+                const delay = minMs + Math.random() * (maxMs - minMs);
+                // Show 15-minute warning, then trigger
+                this._hazardEventTimer = setTimeout(() => {
+                    this._warnHazardEvent();
+                }, delay - 15 * 60 * 1000);
+                console.log(`🌌 Next hazard event in ~${Math.round(delay/3600000)}h`);
+            }
+
+            // 15-minute advance warning
+            _warnHazardEvent() {
+                const defs    = this._hazardEventDefinitions();
+                const last    = this._lastHazardEventId;
+                const options = defs.filter(d => d.id !== last);
+                const event   = options[Math.floor(Math.random() * options.length)];
+                this._pendingHazardEvent = event;
+
+                chatManager.addMessage('SYSTEM', event.announcement, 'system');
+                chatManager.logEvent(`⚠️ HAZARD WARNING: ${event.icon} ${event.name} — ${event.shortDesc} — begins in 15 minutes`, 'warning');
+                this.showNotification(`⚠️ Galactic Hazard incoming: ${event.icon} ${event.name} in 15 minutes!`);
+
+                // Show banner
+                this._showHazardBanner(event, 15 * 60 * 1000, false);
+
+                // Trigger the actual event 15 minutes later
+                setTimeout(() => this._triggerHazardEvent(event), 15 * 60 * 1000);
+            }
+
+            // Fire the hazard event
+            _triggerHazardEvent(event) {
+                this._lastHazardEventId  = event.id;
+                this._activeHazardEvent  = { ...event, startedAt: Date.now(), endsAt: Date.now() + event.duration };
+
+                // Apply effect
+                try { event.onStart(this); } catch(e) { console.error('Hazard onStart error:', e); }
+
+                chatManager.addMessage('SYSTEM', `${event.icon} ${event.name.toUpperCase()} IS NOW ACTIVE: ${event.description}`, 'system');
+                chatManager.logEvent(`${event.icon} ACTIVE: ${event.name} — ${event.shortDesc}`, 'warning');
+                this.showNotification(`🌌 ${event.icon} ${event.name} is now active!`);
+
+                // Show active banner
+                this._showHazardBanner(event, event.duration, true);
+
+                // Show map indicator
+                this._updateHazardMapIndicator();
+
+                // End the event after its duration
+                this._hazardEndTimer = setTimeout(() => this._endHazardEvent(event), event.duration);
+
+                // Schedule the next event
+                this._scheduleNextHazardEvent();
+            }
+
+            // End the event and clean up
+            _endHazardEvent(event) {
+                try { event.onEnd(this); } catch(e) { console.error('Hazard onEnd error:', e); }
+                this._activeHazardEvent = null;
+
+                chatManager.addMessage('SYSTEM', `${event.icon} ${event.name} has ended. Galaxy conditions returning to normal.`, 'system');
+                chatManager.logEvent(`${event.icon} ENDED: ${event.name}`, 'info');
+                this.showNotification(`${event.icon} ${event.name} has ended.`);
+
+                // Remove map indicator
+                const ind = document.getElementById('hazardMapIndicator');
+                if (ind) ind.remove();
+
+                // Remove any lingering banner
+                const banner = document.getElementById('hazardEventBanner');
+                if (banner) banner.remove();
+            }
+
+            // Show the floating announcement banner
+            _showHazardBanner(event, durationMs, isActive) {
+                const old = document.getElementById('hazardEventBanner');
+                if (old) old.remove();
+
+                const banner = document.createElement('div');
+                banner.id = 'hazardEventBanner';
+                banner.style.borderColor = event.color;
+                banner.style.boxShadow   = `0 0 30px ${event.color}44, 0 8px 40px rgba(0,0,0,0.7)`;
+
+                const label = isActive ? 'NOW ACTIVE' : 'INCOMING IN 15 MIN';
+                const mins  = Math.round(durationMs / 60000);
+
+                banner.innerHTML = `
+                    <div class="hazard-banner-title" style="color:${event.color};">${event.icon} ${event.name.toUpperCase()}</div>
+                    <div class="hazard-banner-sub">${event.description}</div>
+                    <div class="hazard-banner-timer" style="color:${event.color};">
+                        ${isActive ? `⏳ Active for ${mins} minutes` : `⏰ ${label}`}
+                    </div>
+                    <button class="hazard-dismiss-btn" onclick="document.getElementById('hazardEventBanner').remove()">Dismiss</button>
+                `;
+                document.body.appendChild(banner);
+
+                // Auto-dismiss after 30 seconds
+                setTimeout(() => { const b = document.getElementById('hazardEventBanner'); if (b) b.remove(); }, 30000);
+            }
+
+            // Small persistent indicator on the galaxy map while event is active
+            _updateHazardMapIndicator() {
+                const old = document.getElementById('hazardMapIndicator');
+                if (old) old.remove();
+                const ev = this._activeHazardEvent;
+                if (!ev) return;
+
+                const mapEl = document.querySelector('.galaxy-map');
+                if (!mapEl) return;
+
+                const ind = document.createElement('div');
+                ind.id = 'hazardMapIndicator';
+                ind.style.borderColor = ev.color;
+                ind.style.color       = ev.color;
+                ind.title = ev.description;
+                ind.innerHTML = `${ev.icon} ${ev.shortDesc}`;
+                ind.onclick = () => this._showHazardBanner(ev, Math.max(0, ev.endsAt - Date.now()), true);
+                mapEl.appendChild(ind);
+            }
+
+            // Returns the active hazard event or null
+            getActiveHazardEvent() { return this._activeHazardEvent || null; }
+
+            // Convenience: is a specific hazard active?
+            isHazardActive(id) { return this._activeHazardEvent?.id === id; }
+
+            // ═══════════════════════════════════════════════════════════
+            //  RACE-SPECIFIC TECH TREE
+            // ═══════════════════════════════════════════════════════════
+
+            RACE_TECHS() {
+                return {
+                    'Terran Empire': [
+                        {
+                            id: 'colonial_infrastructure',
+                            name: 'Colonial Infrastructure', icon: '🏗️',
+                            effect: '+1 building slot on every planet you own',
+                            lore: `Terran engineers have mastered modular construction, squeezing an extra facility onto every colonial footprint.`,
+                            cost: { credits: 500000, metal: 200000, researchPoints: 300 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.colonialInfrastructure = true; }
+                        },
+                        {
+                            id: 'diplomatic_immunity',
+                            name: 'Diplomatic Immunity', icon: '🛡️',
+                            effect: 'Sieges against your planets last 20% longer before capture',
+                            lore: `The Empire's diplomatic corp have embedded delay protocols into every colonial charter, legally complicating hostile takeovers.`,
+                            cost: { credits: 400000, metal: 100000, researchPoints: 250 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.diplomaticImmunity = true; }
+                        },
+                        {
+                            id: 'manifest_destiny',
+                            name: 'Manifest Destiny', icon: '🌐',
+                            effect: 'Sensor radius +40% on all owned planets',
+                            lore: `The Empire believes the galaxy is its birthright. Their sensor arrays reflect this ambition.`,
+                            cost: { credits: 350000, metal: 80000, researchPoints: 200 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.manifestDestiny = true; }
+                        },
+                    ],
+                    "Kor'ai Dynasty": [
+                        {
+                            id: 'seismic_drilling',
+                            name: 'Seismic Drilling', icon: '⛏️',
+                            effect: 'Metal production +45% from rocky and asteroid-type planets',
+                            lore: `Kor'ai engineers have perfected resonance drilling — shattering bedrock at the molecular level to extract ore at impossible speeds.`,
+                            cost: { credits: 300000, metal: 150000, researchPoints: 220 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.seismicDrilling = true; }
+                        },
+                        {
+                            id: 'clan_pact',
+                            name: 'Clan Pact', icon: '🤝',
+                            effect: 'Guild resource transfers cost 0 HE3',
+                            lore: `Clan bonds run deeper than economics. The Kor'ai share freely within their alliance.`,
+                            cost: { credits: 250000, metal: 50000, researchPoints: 180 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.clanPact = true; }
+                        },
+                        {
+                            id: 'apex_predator',
+                            name: 'Apex Predator', icon: '🦅',
+                            effect: 'First strike damage in battle +30%',
+                            lore: `The Kor'ai strike with overwhelming force in the opening seconds of every engagement. Prey rarely survives first contact.`,
+                            cost: { credits: 600000, metal: 200000, researchPoints: 350 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.apexPredator = true; }
+                        },
+                    ],
+                    'Reaper Collective': [
+                        {
+                            id: 'void_salvage',
+                            name: 'Void Salvage', icon: '♻️',
+                            effect: '10% chance destroyed enemy ships are captured and added to your fleet',
+                            lore: `Nothing is wasted. The Reapers have perfected nano-reconstruction — defeated ships are stripped, reprogrammed, and reborn.`,
+                            cost: { credits: 500000, metal: 120000, researchPoints: 300 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.voidSalvage = true; }
+                        },
+                        {
+                            id: 'jury_rigging',
+                            name: 'Jury Rigging', icon: '⚙️',
+                            effect: 'Ship build time reduced by 40%',
+                            lore: `Reapers don't build ships — they improvise them. From salvage. From wreckage. From anything at hand. Speed over polish.`,
+                            cost: { credits: 300000, metal: 100000, researchPoints: 200 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.juryRigging = true; }
+                        },
+                        {
+                            id: 'terror_doctrine',
+                            name: 'Terror Doctrine', icon: '💀',
+                            effect: `Attacking a defended planet drains 15% of the defender's food`,
+                            lore: `Before the Reapers breach a hull, they poison the supply chain. Starvation weakens resistance better than any weapon.`,
+                            cost: { credits: 450000, metal: 80000, researchPoints: 270 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.terrorDoctrine = true; }
+                        },
+                    ],
+                    'The Ascended': [
+                        {
+                            id: 'phase_resonance',
+                            name: 'Phase Resonance', icon: '🔷',
+                            effect: 'Ship shields regenerate 2% of max value per minute passively',
+                            lore: `The Ascended maintain their shields through pure will — a slow, constant hum of protective energy that never fully fades.`,
+                            cost: { credits: 400000, metal: 60000, researchPoints: 280 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.phaseResonance = true; }
+                        },
+                        {
+                            id: 'consciousness_expansion',
+                            name: 'Consciousness Expansion', icon: '🧠',
+                            effect: 'Research point generation +60%',
+                            lore: `The Ascended exist partially outside linear time. Their researchers process millennia of insight in a single session.`,
+                            cost: { credits: 350000, metal: 50000, researchPoints: 200 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.consciousnessExpansion = true; }
+                        },
+                        {
+                            id: 'stellar_cartography',
+                            name: 'Stellar Cartography', icon: '🗺️',
+                            effect: 'All scouted planets become visible to your entire guild instantly',
+                            lore: `The Ascended share consciousness across star systems. What one sees, all see — immediately and without limit.`,
+                            cost: { credits: 300000, metal: 40000, researchPoints: 180 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.stellarCartography = true; }
+                        },
+                    ],
+                    'The Viral Race': [
+                        {
+                            id: 'adaptive_mutation',
+                            name: 'Adaptive Mutation', icon: '🦠',
+                            effect: 'Each planet captured permanently increases population bonus by +1%',
+                            lore: `Every world absorbed strengthens the strain. The Viral Race evolves with each conquest, becoming more efficient with each new host.`,
+                            cost: { credits: 400000, metal: 80000, researchPoints: 260 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.adaptiveMutation = true; }
+                        },
+                        {
+                            id: 'spore_cloud',
+                            name: 'Spore Cloud', icon: '🌫️',
+                            effect: 'Enemy fleets within your sensor range deal 10% reduced damage',
+                            lore: `Viral spores permeate the space around infected planets. Enemy crews experience cognitive disruption and systems degradation.`,
+                            cost: { credits: 500000, metal: 100000, researchPoints: 300 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.sporeCloud = true; }
+                        },
+                        {
+                            id: 'pandemic_protocol',
+                            name: 'Pandemic Protocol', icon: '☣️',
+                            effect: 'Planets you siege produce 0% resources instead of 40%',
+                            lore: `When the Viral Race lays siege, they do not merely blockade — they infect. Production halts. Workers collapse. The planet dies quietly.`,
+                            cost: { credits: 600000, metal: 120000, researchPoints: 350 },
+                            apply: (g) => { g._raceTechFlags = g._raceTechFlags||{}; g._raceTechFlags.pandemicProtocol = true; }
+                        },
+                    ],
+                };
+            }
+
+            renderRaceTech() {
+                const container = document.getElementById('raceTechList');
+                const titleEl   = document.getElementById('raceTechTitle');
+                if (!container) return;
+                const raceName = this.selectedRace?.name;
+                const techs    = (this.RACE_TECHS())[raceName];
+                if (!techs) {
+                    container.innerHTML = `<div style="text-align:center;padding:30px;color:var(--text-secondary);">No race technologies available for this race.</div>`;
+                    return;
+                }
+                if (titleEl) titleEl.textContent = `🧬 ${raceName} Technologies`;
+                const color    = this.selectedRace?.color || 'var(--accent-primary)';
+                const unlocked = this._unlockedRaceTechs || {};
+                container.innerHTML = `
+                    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:16px;padding:10px 12px;
+                        background:rgba(255,255,255,0.03);border-radius:7px;border-left:3px solid ${color};">
+                        These technologies are exclusive to the ${raceName}. Unlocking is permanent and takes effect immediately.
+                    </div>
+                    ${techs.map(tech => {
+                        const isUnlocked = !!unlocked[tech.id];
+                        const canAfford  = !isUnlocked &&
+                            (this.resources.credits        ||0) >= tech.cost.credits &&
+                            (this.resources.metal          ||0) >= tech.cost.metal &&
+                            (this.resources.researchPoints ||0) >= tech.cost.researchPoints;
+                        return `<div class="race-tech-item ${isUnlocked ? 'unlocked' : ''}">
+                            <div class="race-tech-header">
+                                <div class="race-tech-name">${tech.icon} ${tech.name}</div>
+                                <div class="race-tech-badge" style="background:${color}22;border:1px solid ${color};color:${color};">
+                                    ${isUnlocked ? '✅ ACTIVE' : 'RACE TECH'}
+                                </div>
+                            </div>
+                            <div class="race-tech-effect">⚡ ${tech.effect}</div>
+                            <div style="font-size:10px;color:var(--text-secondary);font-style:italic;margin-bottom:8px;">${tech.lore}</div>
+                            ${!isUnlocked ? `<div class="race-tech-cost">Cost: ₡${tech.cost.credits.toLocaleString()} · 🔩${tech.cost.metal.toLocaleString()} · 🔬${tech.cost.researchPoints.toLocaleString()} RP</div>` : ''}
+                            <button class="race-tech-btn ${isUnlocked ? 'unlocked-btn' : (canAfford ? 'can-unlock' : '')}"
+                                onclick="window.game.unlockRaceTech('${tech.id}')"
+                                ${isUnlocked || !canAfford ? 'disabled' : ''}>
+                                ${isUnlocked ? '✅ Technology Active' : canAfford ? '🔓 Unlock Technology' : '⚠️ Insufficient Resources'}
+                            </button>
+                        </div>`;
+                    }).join('')}`;
+            }
+
+            unlockRaceTech(techId) {
+                const raceName = this.selectedRace?.name;
+                const tech = (this.RACE_TECHS()[raceName] || []).find(t => t.id === techId);
+                if (!tech) return;
+                if (!this._unlockedRaceTechs) this._unlockedRaceTechs = {};
+                if (this._unlockedRaceTechs[techId]) { this.showNotification('Already unlocked!'); return; }
+                if ((this.resources.credits        ||0) < tech.cost.credits       ||
+                    (this.resources.metal          ||0) < tech.cost.metal         ||
+                    (this.resources.researchPoints ||0) < tech.cost.researchPoints) {
+                    this.showNotification(`⚠️ Insufficient resources for ${tech.name}.`); return;
+                }
+                this.resources.credits        -= tech.cost.credits;
+                this.resources.metal          -= tech.cost.metal;
+                this.resources.researchPoints -= tech.cost.researchPoints;
+                this._unlockedRaceTechs[techId] = true;
+                tech.apply(this);
+                this.updateResources();
+                this.renderRaceTech();
+                this.saveGameState();
+                this.showNotification(`🧬 ${tech.name} unlocked! Effect active immediately.`);
+                chatManager.logEvent(`🧬 ${this.playerData?.username || raceName} unlocked: ${tech.name}`, 'success');
+            }
+
+            hasRaceTech(techId) {
+                return !!(this._unlockedRaceTechs && this._unlockedRaceTechs[techId]);
+            }
+
             // ═══════════════════════════════════════════════════════════
             //  ALIEN DIPLOMACY ENCOUNTER SYSTEM
             // ═══════════════════════════════════════════════════════════
@@ -15678,6 +16281,8 @@ const SHIP_IMAGE_DATA = {
                     mult += (planet.buildings['Space Station']   || 0) * 0.50;
                     mult += (planet.buildings['Research Outpost']|| 0) * 0.10;
                 }
+                // Manifest Destiny (Terran Empire) — +40% sensor radius
+                if (this.hasRaceTech('manifest_destiny')) mult *= 1.40;
                 return BASE_RADIUS * mult;
             }
 
@@ -15832,10 +16437,11 @@ const SHIP_IMAGE_DATA = {
                 if (!planet || !planet.isRelicWorld) return;
                 if (planet.relicUnlockStep >= 1) { this.showNotification('✅ System already scouted.'); return; }
 
-                const he3Cost = 500;
-                const creditCost = 2000;
+                const _ancSignal = this._hazardFlags?.ancientSignal;
+                const he3Cost    = _ancSignal ? 250   : 500;
+                const creditCost = _ancSignal ? 1000  : 2000;
                 if (this.resources.he3 < he3Cost || this.resources.credits < creditCost) {
-                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + ⚡${he3Cost.toLocaleString()} HE3 to scout this system.`);
+                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + ⚡${he3Cost.toLocaleString()} HE3 to scout this system.${_ancSignal ? ' (50% discount — Ancient Signal active!)' : ''}`);
                     return;
                 }
 
@@ -15860,11 +16466,12 @@ const SHIP_IMAGE_DATA = {
                 if (planet.relicUnlockStep < 1) { this.showNotification('⚠️ Scout the system first.'); return; }
                 if (planet.relicUnlockStep >= 2) { this.showNotification('✅ Excavation already complete.'); return; }
 
-                const he3Cost = 1500;
-                const metalCost = 5000;
-                const creditCost = 8000;
+                const _sig2 = this._hazardFlags?.ancientSignal;
+                const he3Cost    = _sig2 ? 750   : 1500;
+                const metalCost  = _sig2 ? 2500  : 5000;
+                const creditCost = _sig2 ? 4000  : 8000;
                 if (this.resources.he3 < he3Cost || this.resources.metal < metalCost || this.resources.credits < creditCost) {
-                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + ⚡${he3Cost.toLocaleString()} HE3 + 🔩${metalCost.toLocaleString()} metal to excavate.`);
+                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + ⚡${he3Cost.toLocaleString()} HE3 + 🔩${metalCost.toLocaleString()} metal to excavate.${_sig2 ? ' (50% discount!)' : ''}`);
                     return;
                 }
 
@@ -15889,10 +16496,11 @@ const SHIP_IMAGE_DATA = {
                 if (planet.relicUnlockStep < 2) { this.showNotification('⚠️ Complete excavation first.'); return; }
                 if (planet.relicUnlockStep >= 3) { this.showNotification('✅ Data cores already decrypted — colonize now!'); return; }
 
-                const rpCost = 500;
-                const creditCost = 15000;
+                const _sig3 = this._hazardFlags?.ancientSignal;
+                const rpCost     = _sig3 ? 250   : 500;
+                const creditCost = _sig3 ? 7500  : 15000;
                 if (this.resources.researchPoints < rpCost || this.resources.credits < creditCost) {
-                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + 🔬${rpCost.toLocaleString()} Research Points to decrypt.`);
+                    this.showNotification(`⚠️ Need ₡${creditCost.toLocaleString()} + 🔬${rpCost.toLocaleString()} Research Points to decrypt.${_sig3 ? ' (50% discount!)' : ''}`);
                     return;
                 }
 
@@ -16405,7 +17013,10 @@ const SHIP_IMAGE_DATA = {
 
                 this.showNotification(`🔒 Fleet traveling to ${target.name}… siege begins in ${travelTime}s`);
 
-                const SIEGE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+                // Diplomatic Immunity (Terran Empire) — defender's sieges last 20% longer
+                const targetIsMe = target.owner === this.selectedRace?.name;
+                const SIEGE_DURATION_MS = (targetIsMe && this.hasRaceTech('diplomatic_immunity'))
+                    ? Math.floor(5 * 60 * 1000 * 1.20) : 5 * 60 * 1000;
                 const missionFleetIdx = usingFleet ? fleetIdx : null;
                 const missionShipNames = usingFleet ? null : Object.keys(force);
 
@@ -16580,7 +17191,16 @@ const SHIP_IMAGE_DATA = {
                     defense += target.botGarrisonPower;
                 }
 
-                const isVictory = attackPower > defense;
+                // Solar Flare hazard — Space Station shield contribution halved
+                if (this.isHazardActive('solar_flare') && target.buildings?.['Space Station']) {
+                    const ssMult = 0.5;
+                    defense -= Math.floor((target.buildings['Space Station'] || 0) * 1000 * (1 - ssMult));
+                    defense = Math.max(1000, defense);
+                }
+                // Apex Predator (Kor'ai Dynasty) — +30% damage on first strike
+                const effectiveAttackPower = this.hasRaceTech('apex_predator')
+                    ? Math.floor(attackPower * 1.30) : attackPower;
+                const isVictory = effectiveAttackPower > defense;
 
                 // ── Compute per-ship losses for the After-Action Report ──
                 const attackerLosses    = {};
@@ -16628,6 +17248,10 @@ const SHIP_IMAGE_DATA = {
                 const battleReport = { attackerLosses, defenderDestroyed, infectResults, viralGained };
                 this.showBattleSimulation(target, attackForce, attackPower, defense, isVictory, battleReport);
                 
+                // Terror Doctrine (Reaper Collective) — drain 15% of defender food when attacking
+                if (this.hasRaceTech('terror_doctrine') && target.resources?.food) {
+                    target.resources.food = Math.max(0, Math.floor(target.resources.food * 0.85));
+                }
                 this.showNotification(`⚔️ Battle at ${target.name}! Attack: ${attackPower} vs Defense: ${defense}`);
                 
                 // Wait for simulation to complete (30 seconds)
@@ -16722,6 +17346,17 @@ const SHIP_IMAGE_DATA = {
                             attackPower, defense, attackForce, attackerLosses, defenderDestroyed: {},
                             infectResults: [], timestamp: Date.now()
                         });
+
+                        // Void Salvage (Reaper Collective) — 10% chance to recover a random enemy ship on defeat
+                        if (this.hasRaceTech('void_salvage') && Math.random() < 0.10) {
+                            const allRS = Object.values(SHIP_CLASSES).flat();
+                            if (allRS.length > 0) {
+                                const sv = allRS[Math.floor(Math.random() * allRS.length)];
+                                if (!this.ships[sv.name]) this.ships[sv.name] = { ...sv, count: 0, researched: true };
+                                this.ships[sv.name].count = (this.ships[sv.name].count || 0) + 1;
+                                this.showNotification(`♻️ Void Salvage: Recovered 1 ${sv.icon} ${sv.name} from the wreckage!`);
+                            }
+                        }
 
                         this.renderShips();
                         this.showDefeatModal({
@@ -19829,7 +20464,8 @@ const SHIP_IMAGE_DATA = {
                     
                     // Add to build queue instead of instant build
                     // Build time: 1 second per 10 credits
-                    const buildTime = Math.ceil((ship.creditCost / 10) * quantity);
+                    let buildTime = Math.ceil((ship.creditCost / 10) * quantity);
+                    if (this.hasRaceTech('jury_rigging')) buildTime = Math.floor(buildTime * 0.6);
                     
                     this.buildQueue.push({
                         shipName: ship.name,
@@ -19868,7 +20504,8 @@ const SHIP_IMAGE_DATA = {
                     this.resources.credits -= totalCredits;
                     
                     // Add to build queue
-                    const buildTime = ship.time * quantity;
+                    let buildTime = ship.time * quantity;
+                    if (this.hasRaceTech('jury_rigging')) buildTime = Math.floor(buildTime * 0.6);
                     
                     this.buildQueue.push({
                         shipName: ship.name,
@@ -20733,15 +21370,27 @@ const SHIP_IMAGE_DATA = {
                     const globalHE3Modifier = 0.7 * 0.65 * 0.40;    // = 0.182 (81.8% total reduction)
                     const globalFoodModifier = 0.65 * 0.40;         // = 0.26 (74% total reduction)
                     
-                    // Siege drain — if this planet is under siege, production cut 60%
-                    const siegeMultiplier = (planet.siegedBy && planet.siegedUntil > Date.now()) ? 0.40 : 1.0;
+                    // Siege drain — Pandemic Protocol (Viral Race) cuts to 0%; default cuts to 40%
+                    const siegeActive = planet.siegedBy && planet.siegedUntil > Date.now();
+                    const siegerHasPandemic = siegeActive && window.game?.hasRaceTech('pandemic_protocol') &&
+                        window.game?.selectedRace?.name === planet.siegedBy;
+                    const siegeMultiplier = !siegeActive ? 1.0 : (siegerHasPandemic ? 0.0 : 0.40);
+                    // Seismic Drilling (Kor'ai Dynasty) — +45% metal from rocky/barren planets
+                    const seismicBonus = (this.hasRaceTech('seismic_drilling') &&
+                        ['Rocky', 'Barren', 'Desert', 'Ice', 'Volcanic'].includes(planet.type)) ? 1.45 : 1.0;
                     // Tier production bonus
                     const tierMultiplier = this.getTierProductionMultiplier(planet);
                     // Constellation zone control bonus (+20% if player controls the zone)
                     const constellationMultiplier = this.getConstellationProductionBonus(planet);
-                    this.resources.metal += Math.floor((planet.resources.metal / 60) * metalBonus * miningMultiplier * globalMetalModifier * siegeMultiplier * tierMultiplier * constellationMultiplier);
-                    this.resources.he3 += Math.floor((planet.resources.he3 / 60) * globalHE3Modifier * siegeMultiplier * tierMultiplier * constellationMultiplier);
-                    this.resources.food += Math.floor((planet.resources.food / 60) * foodBonus * artifactFoodBonus * globalFoodModifier * foodProductionMultiplier * siegeMultiplier * tierMultiplier * constellationMultiplier);
+                    // Resource Bloom hazard — one resource type produces at 3×
+                    const _bloom = this._hazardFlags?.resourceBloom;
+                    const bloomMetal  = _bloom === 'metal'   ? 3.0 : 1.0;
+                    const bloomHe3    = _bloom === 'he3'     ? 3.0 : 1.0;
+                    const bloomFood   = _bloom === 'food'    ? 3.0 : 1.0;
+                    const bloomCredit = _bloom === 'credits' ? 3.0 : 1.0;
+                    this.resources.metal += Math.floor((planet.resources.metal / 60) * metalBonus * miningMultiplier * globalMetalModifier * siegeMultiplier * tierMultiplier * constellationMultiplier * seismicBonus * bloomMetal);
+                    this.resources.he3 += Math.floor((planet.resources.he3 / 60) * globalHE3Modifier * siegeMultiplier * tierMultiplier * constellationMultiplier * bloomHe3);
+                    this.resources.food += Math.floor((planet.resources.food / 60) * foodBonus * artifactFoodBonus * globalFoodModifier * foodProductionMultiplier * siegeMultiplier * tierMultiplier * constellationMultiplier * bloomFood);
                     
                     // NEW POPULATION GROWTH: +1% per minute with cap of 2500 per planet
                     // Apply race population modifier AND artifact population bonus
@@ -20816,7 +21465,9 @@ const SHIP_IMAGE_DATA = {
                         if (foodEl) { foodEl.style.color = '#ff3366'; setTimeout(() => { if(foodEl) foodEl.style.color = ''; }, 3000); }
                     }
                 }
-                this.resources.credits += creditGeneration;
+                // Resource Bloom hazard — triple credits if active
+                const _creditBloom = this._hazardFlags?.resourceBloom === 'credits' ? 3.0 : 1.0;
+                this.resources.credits += Math.floor(creditGeneration * _creditBloom);
                 
                 // Generate Research Points (1 per 5 minutes = 1/300 per second, affected by tech and building bonuses)
                 const researchBonus = 1 + ((this.techBonuses.research || 0) / 100);
@@ -20830,7 +21481,9 @@ const SHIP_IMAGE_DATA = {
                     }
                 });
                 
-                this.resources.researchPoints = (this.resources.researchPoints || 0) + ((1 / 300) * researchBonus * scienceLabBonus);
+                // Consciousness Expansion (The Ascended) — +60% research point generation
+                const rpMult = this.hasRaceTech('consciousness_expansion') ? 1.60 : 1.0;
+                this.resources.researchPoints = (this.resources.researchPoints || 0) + ((1 / 300) * researchBonus * scienceLabBonus * rpMult);
                 
                 // Apply tech bonuses to per-tick resource gains only (not to accumulated totals)
                 const metalTechBonus  = (this.techBonuses.metal   || 0) / 100;
@@ -20877,6 +21530,22 @@ const SHIP_IMAGE_DATA = {
                 this.resources.food = Math.min(Math.max(0, this.resources.food), MAX_RESOURCE);
                 this.resources.population = Math.min(Math.max(0, this.resources.population), MAX_RESOURCE);
                 
+                // Phase Resonance (The Ascended) — passive shield regen 2%/min on ships
+                if (this.hasRaceTech('phase_resonance')) {
+                    Object.values(this.ships || {}).forEach(ship => {
+                        if (ship.researched && ship.shield > 0 && ship.currentShield !== undefined) {
+                            ship.currentShield = Math.min(ship.shield, (ship.currentShield || 0) + ship.shield * 0.02 / 60);
+                        }
+                    });
+                }
+
+                // Adaptive Mutation (Viral Race) — pop bonus per captured planet
+                if (this.hasRaceTech('adaptive_mutation') && !this._adaptiveMutationApplied) {
+                    this._adaptiveMutationApplied = true;
+                    const capturedCount = this.planets.filter(p => this._isMyPlanet(p)).length;
+                    this._adaptiveMutationBonus = capturedCount * 0.01;
+                }
+
                 this.updateResources();
               } catch(e) {
                 console.error('❌ generateResources error:', e);
@@ -21003,6 +21672,8 @@ const SHIP_IMAGE_DATA = {
                     this.renderRankings();
                 } else if (tab === 'crafting') {
                     this.renderInlineCrafting();
+                } else if (tab === 'raceTech') {
+                    this.renderRaceTech();
                 }
                 
                 this.updateResearchStats();
