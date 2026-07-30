@@ -17446,7 +17446,7 @@ const SHIP_IMAGE_DATA = {
                             <div style="font-size:11px;color:#8ba3c7;margin-top:4px;">${target.name}</div>
                         </div>
                     </div>
-                    <div id="battleVisualization" style="width:100%;height:300px;background:#000;border-radius:12px;overflow:hidden;border:2px solid ${outcomeColor};margin-bottom:24px;"></div>
+                    <div id="battleVisualization" style="width:100%;height:420px;background:#020510;border-radius:12px;overflow:hidden;border:2px solid ${outcomeColor};margin-bottom:24px;position:relative;"></div>
                     <div style="text-align:left;background:var(--bg-secondary);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px;margin-bottom:16px;">
                         <div style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:2px;color:#8ba3c7;margin-bottom:16px;">\ud83d\udccb AFTER-ACTION REPORT</div>
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px;">
@@ -17491,17 +17491,23 @@ const SHIP_IMAGE_DATA = {
                     </div>
                     <div style="display:flex;flex-direction:column;gap:10px;align-items:center;">
                         <div id="battleTimer" style="font-size:16px;color:#8ba3c7;">Auto-close in: <span style="color:var(--accent-primary);font-weight:700;">30s</span></div>
-                        <button onclick="document.getElementById('battleSimulation').remove();clearInterval(window.battleTimerInterval);"
-                            style="padding:12px 32px;background:linear-gradient(135deg,#ff3366,#ff4a4a);border:2px solid #ff6688;border-radius:8px;color:white;font-weight:700;cursor:pointer;font-size:16px;text-transform:uppercase;">
-                            \u2716 Close Report
-                        </button>
+                        <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+                            <button onclick="window._battleSkip=true;document.getElementById('battleSimulation').remove();clearInterval(window.battleTimerInterval);"
+                                style="padding:12px 28px;background:rgba(255,255,255,0.07);border:2px solid rgba(255,255,255,0.2);border-radius:8px;color:#8ba3c7;font-weight:700;cursor:pointer;font-size:14px;">
+                                ⏭ Skip Animation
+                            </button>
+                            <button onclick="document.getElementById('battleSimulation').remove();clearInterval(window.battleTimerInterval);"
+                                style="padding:12px 28px;background:linear-gradient(135deg,#ff3366,#ff4a4a);border:2px solid #ff6688;border-radius:8px;color:white;font-weight:700;cursor:pointer;font-size:14px;text-transform:uppercase;">
+                                ✖ Close Report
+                            </button>
+                        </div>
                     </div>
                 </div>`;
 
                 document.body.appendChild(modal);
-                this.animateBattle(isVictory);
+                this.animateBattle(isVictory, attackForce, target, attackPower, defense);
 
-                let timeLeft = 30;
+                let timeLeft = 45;
                 window.battleTimerInterval = setInterval(() => {
                     timeLeft--;
                     const el = document.getElementById('battleTimer');
@@ -17513,34 +17519,345 @@ const SHIP_IMAGE_DATA = {
                 }, 1000);
             }
 
-            animateBattle(isVictory) {
+            animateBattle(isVictory, attackForce, target, attackPower, defense) {
                 const viz = document.getElementById('battleVisualization');
                 if (!viz) return;
-                
-                let frameIndex = 0;
-                const frames = BATTLE_IMAGES;
-                
-                // Initial image
-                viz.style.backgroundImage = `url('${frames[0]}')`;
-                viz.style.backgroundSize = 'cover';
-                viz.style.backgroundPosition = 'center';
-                
-                // Cycle through battle images every 3 seconds
-                const battleInterval = setInterval(() => {
-                    frameIndex = (frameIndex + 1) % frames.length;
-                    viz.style.backgroundImage = `url('${frames[frameIndex]}')`;
-                    
-                    // Add flash effect on frame change
-                    viz.style.filter = 'brightness(1.5)';
-                    setTimeout(() => {
-                        viz.style.filter = 'brightness(1)';
-                    }, 200);
-                }, 3000);
-                
-                // Clear after 30 seconds
-                setTimeout(() => {
-                    clearInterval(battleInterval);
-                }, 30000);
+
+                // ── Build canvas inside the viz div ──
+                const canvas = document.createElement('canvas');
+                canvas.width  = viz.clientWidth  || 860;
+                canvas.height = viz.clientHeight || 300;
+                canvas.style.cssText = 'width:100%;height:100%;display:block;';
+                viz.innerHTML = '';
+                viz.appendChild(canvas);
+                const ctx = canvas.getContext('2d');
+                const W = canvas.width, H = canvas.height;
+
+                // ── Ship colour/shape config per damage type ──
+                const SHIP_STYLES = {
+                    Kinetic:  { color: '#8ba3c7', projColor: '#c0d0ff', projSpeed: 14 },
+                    Laser:    { color: '#00d9ff', projColor: '#00ffff', projSpeed: 0  }, // instant
+                    Nuclear:  { color: '#ff6600', projColor: '#ff9900', projSpeed: 5  },
+                    Plasma:   { color: '#00ff88', projColor: '#44ffaa', projSpeed: 9  },
+                    Ballistic:{ color: '#ffcc00', projColor: '#ffe566', projSpeed: 12 },
+                    default:  { color: '#8ba3c7', projColor: '#c0d0ff', projSpeed: 10 },
+                };
+
+                // ── Build attacker ship list ──
+                const attackerShips = [];
+                Object.entries(attackForce || {}).forEach(([name, count]) => {
+                    const shipDef = this.ships?.[name] || {};
+                    const style   = SHIP_STYLES[shipDef.damageType] || SHIP_STYLES.default;
+                    const perRow  = Math.ceil(Math.sqrt(count));
+                    for (let i = 0; i < Math.min(count, 30); i++) {
+                        attackerShips.push({
+                            x: 40 + (i % perRow) * 18,
+                            y: H * 0.15 + Math.floor(i / perRow) * 22,
+                            hp: shipDef.hitPoints || 50,
+                            maxHp: shipDef.hitPoints || 50,
+                            dmg: shipDef.damage || 20,
+                            color: style.color,
+                            projColor: style.projColor,
+                            projSpeed: style.projSpeed,
+                            instant: style.projSpeed === 0,
+                            dead: false,
+                            side: 'attacker',
+                            name,
+                            icon: shipDef.icon || '🚀',
+                            fireCooldown: Math.random() * 60,
+                        });
+                    }
+                });
+
+                // ── Build defender ship list from botGarrison ──
+                const defenderShips = [];
+                const garrison = target?.botGarrison || {};
+                const GENERIC = { Fighter:50, Corvette:120, Frigate:280, Destroyer:600, Cruiser:1200, Battleship:2500 };
+                const GENERIC_HP = { Fighter:60, Corvette:140, Frigate:320, Destroyer:700, Cruiser:1400, Battleship:3000 };
+                Object.entries(garrison).forEach(([type, data]) => {
+                    const cnt = Math.min(data.count || 1, 20);
+                    const perRow = Math.ceil(Math.sqrt(cnt));
+                    const dmg = data.damage || GENERIC[type] || 100;
+                    const hp  = GENERIC_HP[type] || 100;
+                    for (let i = 0; i < cnt; i++) {
+                        defenderShips.push({
+                            x: W - 40 - (i % perRow) * 18,
+                            y: H * 0.15 + Math.floor(i / perRow) * 22,
+                            hp, maxHp: hp, dmg,
+                            color: '#ff4a4a', projColor: '#ff8888', projSpeed: 10,
+                            dead: false, side: 'defender',
+                            name: type, icon: '🛸',
+                            fireCooldown: Math.random() * 60,
+                        });
+                    }
+                });
+                // Ensure at least 3 defenders even if no garrison data
+                if (defenderShips.length === 0) {
+                    for (let i = 0; i < 6; i++) {
+                        defenderShips.push({
+                            x: W - 50 - (i % 3) * 20, y: H * 0.2 + Math.floor(i/3) * 26,
+                            hp: 80, maxHp: 80, dmg: 40,
+                            color: '#ff4a4a', projColor: '#ff8888', projSpeed: 10,
+                            dead: false, side: 'defender', name: 'Defender', icon: '🛸',
+                            fireCooldown: Math.random() * 60,
+                        });
+                    }
+                }
+
+                const allShips    = [...attackerShips, ...defenderShips];
+                const projectiles = [];
+                const explosions  = [];
+                const particles   = [];
+                const laserFlash  = [];
+                let screenShake   = 0;
+                let frame = 0;
+                const MAX_FRAMES  = 1800; // 30s at 60fps
+
+                // Total power ratio determines how fast each side gets whittled down
+                const atkRatio = isVictory ? 0.20 : 0.50; // fraction of attacker ships that die
+                const defRatio = isVictory ? 0.95 : 0.30;
+                const atkDeathFrame = (name) => {
+                    const total = attackerShips.filter(s => s.name === name).length;
+                    const die   = Math.ceil(total * atkRatio);
+                    return die;
+                };
+
+                // ── Helpers ──
+                const rnd = (a, b) => a + Math.random() * (b - a);
+                const clr = (hex, a) => {
+                    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+                    return `rgba(${r},${g},${b},${a})`;
+                };
+
+                const drawShip = (s) => {
+                    if (s.dead) return;
+                    const dir = s.side === 'attacker' ? 1 : -1;
+                    ctx.save();
+                    ctx.translate(s.x, s.y);
+                    // Ship body — sleek diamond/arrow shape
+                    ctx.beginPath();
+                    ctx.moveTo(dir * 10, 0);
+                    ctx.lineTo(dir * -4,  -5);
+                    ctx.lineTo(dir * -8,  0);
+                    ctx.lineTo(dir * -4,  5);
+                    ctx.closePath();
+                    ctx.fillStyle = s.color;
+                    ctx.shadowColor = s.color;
+                    ctx.shadowBlur  = 6;
+                    ctx.fill();
+                    // Engine glow
+                    ctx.beginPath();
+                    ctx.arc(dir * -8, 0, 2.5, 0, Math.PI * 2);
+                    ctx.fillStyle = '#fff';
+                    ctx.shadowBlur = 10;
+                    ctx.fill();
+                    // HP bar (tiny, above ship)
+                    if (s.hp < s.maxHp) {
+                        const pct = s.hp / s.maxHp;
+                        ctx.shadowBlur = 0;
+                        ctx.fillStyle = '#333';
+                        ctx.fillRect(-8, -12, 16, 2);
+                        ctx.fillStyle = pct > 0.5 ? '#00ff88' : pct > 0.25 ? '#ffcc00' : '#ff4444';
+                        ctx.fillRect(-8, -12, 16 * pct, 2);
+                    }
+                    ctx.restore();
+                };
+
+                const spawnExplosion = (x, y, big) => {
+                    const count = big ? 18 : 9;
+                    for (let i = 0; i < count; i++) {
+                        const angle = (i / count) * Math.PI * 2 + rnd(0, 0.4);
+                        const speed = rnd(big ? 1.5 : 0.8, big ? 4 : 2.2);
+                        particles.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+                            life: 1, decay: rnd(0.025, 0.055),
+                            color: ['#ff9900','#ff6600','#ffcc00','#ffffff'][Math.floor(Math.random()*4)],
+                            size: rnd(big ? 2 : 1, big ? 5 : 3) });
+                    }
+                    explosions.push({ x, y, r: 0, maxR: big ? 30 : 18, life: 1, decay: 0.06 });
+                    if (big) screenShake = 8;
+                };
+
+                const killShip = (s) => {
+                    s.dead = true;
+                    spawnExplosion(s.x, s.y, s.maxHp > 200);
+                };
+
+                // Schedule deaths based on outcome
+                let atkDeaths  = Math.round(attackerShips.length * atkRatio);
+                let defDeaths  = Math.round(defenderShips.length * defRatio);
+                const atkDead  = new Set();
+                const defDead  = new Set();
+
+                const tickDeaths = () => {
+                    // Spread deaths over the animation duration
+                    const t = frame / MAX_FRAMES;
+                    const targetAtkDead = Math.round(t * atkDeaths);
+                    const targetDefDead = Math.round(t * defDeaths);
+                    while (atkDead.size < targetAtkDead) {
+                        const alive = attackerShips.filter((_,i) => !atkDead.has(i));
+                        if (!alive.length) break;
+                        const pick = alive[Math.floor(Math.random() * alive.length)];
+                        const idx  = attackerShips.indexOf(pick);
+                        atkDead.add(idx);
+                        killShip(pick);
+                    }
+                    while (defDead.size < targetDefDead) {
+                        const alive = defenderShips.filter((_,i) => !defDead.has(i));
+                        if (!alive.length) break;
+                        const pick = alive[Math.floor(Math.random() * alive.length)];
+                        const idx  = defenderShips.indexOf(pick);
+                        defDead.add(idx);
+                        killShip(pick);
+                    }
+                };
+
+                const fireProjFromTo = (src, targets) => {
+                    const alive = targets.filter(t => !t.dead);
+                    if (!alive.length || src.dead) return;
+                    const tgt = alive[Math.floor(Math.random() * alive.length)];
+                    if (src.instant) {
+                        laserFlash.push({ x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, life: 0.8, color: src.projColor });
+                        return;
+                    }
+                    const dx = tgt.x - src.x, dy = tgt.y - src.y;
+                    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+                    projectiles.push({
+                        x: src.x, y: src.y,
+                        vx: (dx/len) * src.projSpeed, vy: (dy/len) * src.projSpeed,
+                        color: src.projColor, life: 1, size: 3,
+                        tx: tgt.x, ty: tgt.y,
+                    });
+                };
+
+                // ── Main render loop ──
+                const loop = () => {
+                    if (frame >= MAX_FRAMES || !document.getElementById('battleSimulation')) return;
+                    frame++;
+
+                    // Screen shake
+                    const sx = screenShake > 0 ? rnd(-screenShake, screenShake) : 0;
+                    const sy = screenShake > 0 ? rnd(-screenShake, screenShake) : 0;
+                    if (screenShake > 0) screenShake = Math.max(0, screenShake - 0.6);
+
+                    ctx.save();
+                    ctx.translate(sx, sy);
+
+                    // Background: deep space
+                    ctx.fillStyle = '#020510';
+                    ctx.fillRect(-10, -10, W+20, H+20);
+
+                    // Star field (static, seeded)
+                    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+                    for (let i = 0; i < 60; i++) {
+                        const sx2 = ((i * 137.5) % 1) * W;
+                        const sy2 = ((i * 93.7)  % 1) * H;
+                        ctx.fillRect(sx2, sy2, i%3===0 ? 2 : 1, i%3===0 ? 2 : 1);
+                    }
+
+                    // Battle divider line
+                    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([4, 6]);
+                    ctx.beginPath(); ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H); ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Side labels
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.textAlign = 'left';
+                    ctx.fillStyle = 'rgba(0,217,255,0.5)';
+                    ctx.fillText('YOUR FLEET', 10, 14);
+                    ctx.textAlign = 'right';
+                    ctx.fillStyle = 'rgba(255,74,74,0.5)';
+                    ctx.fillText('DEFENDERS', W - 10, 14);
+                    ctx.textAlign = 'left';
+
+                    // Update deaths
+                    tickDeaths();
+
+                    // Fire projectiles every ~40 frames per ship
+                    allShips.forEach(s => {
+                        if (s.dead) return;
+                        s.fireCooldown--;
+                        if (s.fireCooldown <= 0) {
+                            s.fireCooldown = 25 + Math.floor(Math.random() * 30);
+                            const targets = s.side === 'attacker' ? defenderShips : attackerShips;
+                            fireProjFromTo(s, targets);
+                        }
+                    });
+
+                    // Draw laser flashes
+                    laserFlash.forEach((lf, i) => {
+                        ctx.save();
+                        ctx.strokeStyle = lf.color;
+                        ctx.lineWidth = 2;
+                        ctx.globalAlpha = lf.life;
+                        ctx.shadowColor = lf.color;
+                        ctx.shadowBlur  = 8;
+                        ctx.beginPath(); ctx.moveTo(lf.x1, lf.y1); ctx.lineTo(lf.x2, lf.y2); ctx.stroke();
+                        ctx.restore();
+                        lf.life -= 0.12;
+                    });
+                    laserFlash.splice(0, laserFlash.length, ...laserFlash.filter(lf => lf.life > 0));
+
+                    // Move + draw projectiles
+                    projectiles.forEach(p => {
+                        p.x += p.vx; p.y += p.vy;
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                        ctx.fillStyle = p.color;
+                        ctx.shadowColor = p.color;
+                        ctx.shadowBlur  = 10;
+                        ctx.globalAlpha = p.life;
+                        ctx.fill();
+                        ctx.restore();
+                        p.life -= 0.015;
+                    });
+                    projectiles.splice(0, projectiles.length, ...projectiles.filter(p => p.life > 0));
+
+                    // Draw explosions
+                    explosions.forEach(e => {
+                        ctx.save();
+                        const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r);
+                        grad.addColorStop(0, `rgba(255,220,100,${e.life})`);
+                        grad.addColorStop(0.5, `rgba(255,100,0,${e.life * 0.6})`);
+                        grad.addColorStop(1, `rgba(255,50,0,0)`);
+                        ctx.fillStyle = grad;
+                        ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+                        ctx.restore();
+                        e.r += 2.5; e.life -= e.decay;
+                    });
+                    explosions.splice(0, explosions.length, ...explosions.filter(e => e.life > 0));
+
+                    // Draw particles
+                    particles.forEach(p => {
+                        ctx.save();
+                        ctx.globalAlpha = p.life;
+                        ctx.fillStyle   = p.color;
+                        ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill();
+                        ctx.restore();
+                        p.x += p.vx; p.y += p.vy;
+                        p.vx *= 0.96; p.vy *= 0.96;
+                        p.life -= p.decay;
+                    });
+                    particles.splice(0, particles.length, ...particles.filter(p => p.life > 0));
+
+                    // Draw ships
+                    allShips.forEach(drawShip);
+
+                    // Final outcome flash at end
+                    if (frame > MAX_FRAMES - 60) {
+                        const t = (frame - (MAX_FRAMES - 60)) / 60;
+                        const col = isVictory ? `rgba(0,255,136,${t * 0.15})` : `rgba(255,74,74,${t * 0.15})`;
+                        ctx.fillStyle = col;
+                        ctx.fillRect(-10, -10, W+20, H+20);
+                    }
+
+                    ctx.restore(); // end shake
+                    requestAnimationFrame(loop);
+                };
+
+                requestAnimationFrame(loop);
             }
             
             claimPlanet(planetId) {
