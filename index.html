@@ -17533,74 +17533,158 @@ const SHIP_IMAGE_DATA = {
                 const ctx = canvas.getContext('2d');
                 const W = canvas.width, H = canvas.height;
 
-                // ── Ship colour/shape config per damage type ──
-                const SHIP_STYLES = {
-                    Kinetic:  { color: '#8ba3c7', projColor: '#c0d0ff', projSpeed: 14 },
-                    Laser:    { color: '#00d9ff', projColor: '#00ffff', projSpeed: 0  }, // instant
-                    Nuclear:  { color: '#ff6600', projColor: '#ff9900', projSpeed: 5  },
-                    Plasma:   { color: '#00ff88', projColor: '#44ffaa', projSpeed: 9  },
-                    Ballistic:{ color: '#ffcc00', projColor: '#ffe566', projSpeed: 12 },
-                    default:  { color: '#8ba3c7', projColor: '#c0d0ff', projSpeed: 10 },
+                // ── Ship class size, speed, and colour config ──
+                const CLASS_CONFIG = {
+                    // Attacker classes (by ship class name)
+                    Fighter:    { size:6,  speed:0.6, spacing:16, projSpeed:14, color:'#00d9ff', projColor:'#c0d0ff' },
+                    Corvette:   { size:9,  speed:0.5, spacing:20, projSpeed:12, color:'#00d9ff', projColor:'#b0d8ff' },
+                    Frigate:    { size:13, speed:0.4, spacing:28, projSpeed:10, color:'#00d9ff', projColor:'#80c0ff' },
+                    Destroyer:  { size:17, speed:0.3, spacing:36, projSpeed:9,  color:'#00aaff', projColor:'#60a0ff' },
+                    Cruiser:    { size:21, speed:0.25,spacing:44, projSpeed:8,  color:'#0077dd', projColor:'#4488ff' },
+                    Battleship: { size:26, speed:0.18,spacing:54, projSpeed:6,  color:'#0055cc', projColor:'#3366ff' },
+                    Capitol:    { size:32, speed:0.12,spacing:68, projSpeed:5,  color:'#003399', projColor:'#2244ff' },
+                };
+                const DAMAGE_PROJ = {
+                    Kinetic:  { projColor:'#c0d0ff', projSpeed:14, instant:false },
+                    Laser:    { projColor:'#00ffff', projSpeed:0,  instant:true  },
+                    Nuclear:  { projColor:'#ff9900', projSpeed:5,  instant:false },
+                    Plasma:   { projColor:'#44ffaa', projSpeed:9,  instant:false },
+                    Ballistic:{ projColor:'#ffe566', projSpeed:12, instant:false },
+                    default:  { projColor:'#c0d0ff', projSpeed:10, instant:false },
+                };
+                // Generic HP/DMG for bot ships by class
+                const GENERIC_STATS = {
+                    Fighter:   { hp:60,   dmg:50,   cls:'Fighter'    },
+                    Corvette:  { hp:140,  dmg:120,  cls:'Corvette'   },
+                    Frigate:   { hp:320,  dmg:280,  cls:'Frigate'    },
+                    Destroyer: { hp:700,  dmg:600,  cls:'Destroyer'  },
+                    Cruiser:   { hp:1400, dmg:1200, cls:'Cruiser'    },
+                    Battleship:{ hp:3000, dmg:2500, cls:'Battleship' },
                 };
 
-                // ── Build attacker ship list ──
+                // Infer ship class from name or hitPoints
+                const inferClass = (shipDef) => {
+                    const n = (shipDef.name || '').toLowerCase();
+                    if (n.includes('capitol') || n.includes('capital')) return 'Capitol';
+                    if (n.includes('battleship') || (shipDef.hitPoints||0) >= 2000) return 'Battleship';
+                    if (n.includes('cruiser')    || (shipDef.hitPoints||0) >= 900)  return 'Cruiser';
+                    if (n.includes('destroyer')  || (shipDef.hitPoints||0) >= 500)  return 'Destroyer';
+                    if (n.includes('frigate')    || (shipDef.hitPoints||0) >= 250)  return 'Frigate';
+                    if (n.includes('corvette')   || (shipDef.hitPoints||0) >= 100)  return 'Corvette';
+                    return 'Fighter';
+                };
+
+                const makeShip = (opts) => {
+                    const cls    = opts.cls || 'Fighter';
+                    const cfg    = CLASS_CONFIG[cls] || CLASS_CONFIG.Fighter;
+                    const proj   = opts.projOverride || DAMAGE_PROJ[opts.damageType] || DAMAGE_PROJ.default;
+                    return {
+                        x: opts.x, y: opts.y,
+                        vx: 0, vy: 0,
+                        baseX: opts.x, baseY: opts.y,
+                        hp: opts.hp, maxHp: opts.hp,
+                        dmg: opts.dmg,
+                        size: cfg.size,
+                        speed: cfg.speed,
+                        spacing: cfg.spacing,
+                        color: opts.color || cfg.color,
+                        projColor: proj.projColor,
+                        projSpeed: proj.projSpeed,
+                        instant: proj.instant,
+                        dead: false,
+                        drifting: false,
+                        driftVx: 0, driftVy: 0,
+                        side: opts.side,
+                        cls,
+                        name: opts.name || cls,
+                        label: opts.label || opts.name || cls,
+                        fireCooldown: Math.random() * 60,
+                        // Building-based defenders fire from fixed positions
+                        fixed: opts.fixed || false,
+                        isStructure: opts.isStructure || false,
+                    };
+                };
+
+                // ── Build attacker ship list (scaled by class) ──
                 const attackerShips = [];
+                let atkRow = 0, atkCol = 0, atkMaxCol = 4;
                 Object.entries(attackForce || {}).forEach(([name, count]) => {
-                    const shipDef = this.ships?.[name] || {};
-                    const style   = SHIP_STYLES[shipDef.damageType] || SHIP_STYLES.default;
-                    const perRow  = Math.ceil(Math.sqrt(count));
-                    for (let i = 0; i < Math.min(count, 30); i++) {
-                        attackerShips.push({
-                            x: 40 + (i % perRow) * 18,
-                            y: H * 0.15 + Math.floor(i / perRow) * 22,
-                            hp: shipDef.hitPoints || 50,
-                            maxHp: shipDef.hitPoints || 50,
+                    const shipDef  = this.ships?.[name] || {};
+                    const cls      = inferClass(shipDef);
+                    const cfg      = CLASS_CONFIG[cls] || CLASS_CONFIG.Fighter;
+                    const projDef  = DAMAGE_PROJ[shipDef.damageType] || DAMAGE_PROJ.default;
+                    const maxShow  = cls === 'Capitol' ? 2 : cls === 'Battleship' ? 4 : Math.min(count, 20);
+                    for (let i = 0; i < maxShow; i++) {
+                        attackerShips.push(makeShip({
+                            x: 30 + atkCol * (cfg.spacing + 6),
+                            y: H * 0.12 + atkRow * (cfg.spacing + 6),
+                            hp: shipDef.hitPoints || shipDef.hull || 50,
                             dmg: shipDef.damage || 20,
-                            color: style.color,
-                            projColor: style.projColor,
-                            projSpeed: style.projSpeed,
-                            instant: style.projSpeed === 0,
-                            dead: false,
-                            side: 'attacker',
-                            name,
-                            icon: shipDef.icon || '🚀',
-                            fireCooldown: Math.random() * 60,
-                        });
+                            cls, side: 'attacker', name, label: name,
+                            projOverride: projDef,
+                        }));
+                        atkCol++;
+                        if (atkCol >= atkMaxCol) { atkCol = 0; atkRow++; }
                     }
                 });
 
-                // ── Build defender ship list from botGarrison ──
+                // ── Build defender ship list: botGarrison + building-based defenses ──
                 const defenderShips = [];
-                const garrison = target?.botGarrison || {};
-                const GENERIC = { Fighter:50, Corvette:120, Frigate:280, Destroyer:600, Cruiser:1200, Battleship:2500 };
-                const GENERIC_HP = { Fighter:60, Corvette:140, Frigate:320, Destroyer:700, Cruiser:1400, Battleship:3000 };
+                const garrison     = target?.botGarrison || {};
+                const buildings    = target?.buildings   || {};
+
+                // 1. Garrison ships
+                let defRow = 0, defCol = 0, defMaxCol = 4;
                 Object.entries(garrison).forEach(([type, data]) => {
-                    const cnt = Math.min(data.count || 1, 20);
-                    const perRow = Math.ceil(Math.sqrt(cnt));
-                    const dmg = data.damage || GENERIC[type] || 100;
-                    const hp  = GENERIC_HP[type] || 100;
+                    const gs   = GENERIC_STATS[type] || GENERIC_STATS.Fighter;
+                    const cfg  = CLASS_CONFIG[gs.cls] || CLASS_CONFIG.Fighter;
+                    const cnt  = Math.min(data.count || 1, 15);
                     for (let i = 0; i < cnt; i++) {
-                        defenderShips.push({
-                            x: W - 40 - (i % perRow) * 18,
-                            y: H * 0.15 + Math.floor(i / perRow) * 22,
-                            hp, maxHp: hp, dmg,
-                            color: '#ff4a4a', projColor: '#ff8888', projSpeed: 10,
-                            dead: false, side: 'defender',
-                            name: type, icon: '🛸',
-                            fireCooldown: Math.random() * 60,
-                        });
+                        defenderShips.push(makeShip({
+                            x: W - 30 - defCol * (cfg.spacing + 6),
+                            y: H * 0.12 + defRow * (cfg.spacing + 6),
+                            hp: gs.hp, dmg: gs.dmg,
+                            cls: gs.cls, side: 'defender', name: type, label: type,
+                            color: '#ff4a4a',
+                        }));
+                        defCol++;
+                        if (defCol >= defMaxCol) { defCol = 0; defRow++; }
                     }
                 });
-                // Ensure at least 3 defenders even if no garrison data
+
+                // 2. Building-based fixed defenses
+                const BUILDING_DEFS = [
+                    { key: 'Missile Silo',  label: '🚀 Silo',  hp: 500,  dmg: 500,  color: '#ff6600', projColor: '#ff9900', projSpeed: 6,  cls: 'Destroyer', count: 1 },
+                    { key: 'Space Station', label: '🛰 Station',hp: 1000, dmg: 1000, color: '#aa44ff', projColor: '#cc88ff', projSpeed: 5,  cls: 'Cruiser',   count: 1 },
+                    { key: 'Barracks',      label: '⚔️ Barracks',hp:300,  dmg: 300,  color: '#ff4a4a', projColor: '#ff8888', projSpeed: 8,  cls: 'Frigate',   count: 1 },
+                ];
+                BUILDING_DEFS.forEach(bd => {
+                    const lvl = buildings[bd.key] || 0;
+                    if (lvl === 0) return;
+                    for (let i = 0; i < Math.min(lvl, 3); i++) {
+                        const cfg = CLASS_CONFIG[bd.cls];
+                        defenderShips.push(makeShip({
+                            x: W - 30 - (defCol % defMaxCol) * (cfg.spacing + 4),
+                            y: H * 0.15 + Math.floor(defCol / defMaxCol) * (cfg.spacing + 4),
+                            hp: bd.hp * lvl, dmg: bd.dmg * lvl,
+                            cls: bd.cls, side: 'defender',
+                            name: bd.key, label: bd.label,
+                            color: bd.color,
+                            projOverride: { projColor: bd.projColor, projSpeed: bd.projSpeed, instant: false },
+                            fixed: true, isStructure: true,
+                        }));
+                        defCol++;
+                    }
+                });
+
+                // Fallback if still no defenders
                 if (defenderShips.length === 0) {
-                    for (let i = 0; i < 6; i++) {
-                        defenderShips.push({
-                            x: W - 50 - (i % 3) * 20, y: H * 0.2 + Math.floor(i/3) * 26,
-                            hp: 80, maxHp: 80, dmg: 40,
-                            color: '#ff4a4a', projColor: '#ff8888', projSpeed: 10,
-                            dead: false, side: 'defender', name: 'Defender', icon: '🛸',
-                            fireCooldown: Math.random() * 60,
-                        });
+                    for (let i = 0; i < 5; i++) {
+                        defenderShips.push(makeShip({
+                            x: W - 40 - (i % 3) * 22, y: H * 0.2 + Math.floor(i/3) * 26,
+                            hp: 80, dmg: 40, cls: 'Fighter', side: 'defender',
+                            name: 'Defender', label: 'Defender', color: '#ff4a4a',
+                        }));
                     }
                 }
 
@@ -17612,6 +17696,8 @@ const SHIP_IMAGE_DATA = {
                 let screenShake   = 0;
                 let frame = 0;
                 const MAX_FRAMES  = 1800; // 30s at 60fps
+                const killFeed    = []; // { text, color, life }
+                const MAX_FEED    = 5;
 
                 // Total power ratio determines how fast each side gets whittled down
                 const atkRatio = isVictory ? 0.20 : 0.50; // fraction of attacker ships that die
@@ -17629,57 +17715,214 @@ const SHIP_IMAGE_DATA = {
                     return `rgba(${r},${g},${b},${a})`;
                 };
 
-                const drawShip = (s) => {
-                    if (s.dead) return;
+                // ── Movement update ──
+                const updateShipMovement = (s) => {
+                    if (s.dead || s.drifting || s.fixed || s.isStructure) return;
                     const dir = s.side === 'attacker' ? 1 : -1;
-                    ctx.save();
-                    ctx.translate(s.x, s.y);
-                    // Ship body — sleek diamond/arrow shape
-                    ctx.beginPath();
-                    ctx.moveTo(dir * 10, 0);
-                    ctx.lineTo(dir * -4,  -5);
-                    ctx.lineTo(dir * -8,  0);
-                    ctx.lineTo(dir * -4,  5);
-                    ctx.closePath();
-                    ctx.fillStyle = s.color;
-                    ctx.shadowColor = s.color;
-                    ctx.shadowBlur  = 6;
-                    ctx.fill();
-                    // Engine glow
-                    ctx.beginPath();
-                    ctx.arc(dir * -8, 0, 2.5, 0, Math.PI * 2);
-                    ctx.fillStyle = '#fff';
-                    ctx.shadowBlur = 10;
-                    ctx.fill();
-                    // HP bar (tiny, above ship)
-                    if (s.hp < s.maxHp) {
-                        const pct = s.hp / s.maxHp;
-                        ctx.shadowBlur = 0;
-                        ctx.fillStyle = '#333';
-                        ctx.fillRect(-8, -12, 16, 2);
-                        ctx.fillStyle = pct > 0.5 ? '#00ff88' : pct > 0.25 ? '#ffcc00' : '#ff4444';
-                        ctx.fillRect(-8, -12, 16 * pct, 2);
+                    const midX = W * 0.5;
+                    // Slowly advance toward the centre line, stop at engagement zone
+                    const engageX = s.side === 'attacker' ? W * 0.38 : W * 0.62;
+                    if (s.side === 'attacker' && s.x < engageX) {
+                        s.x += s.speed;
+                    } else if (s.side === 'defender' && s.x > engageX) {
+                        s.x -= s.speed;
                     }
+                    // Subtle vertical drift (strafe)
+                    s.y += Math.sin(frame * 0.04 + s.baseY) * 0.25;
+                };
+
+                // ── Drift dead ships offscreen ──
+                const updateDrift = (s) => {
+                    if (!s.drifting) return;
+                    s.x += s.driftVx;
+                    s.y += s.driftVy;
+                    s.driftVx *= 0.99;
+                    s.driftVy *= 0.99;
+                };
+
+                const drawShip = (s) => {
+                    if (s.dead && !s.drifting) return;
+                    const dir = s.side === 'attacker' ? 1 : -1;
+                    const sz  = s.size || 8;
+                    const alpha = s.drifting ? Math.max(0, 1 - (Math.abs(s.x - s.baseX) + Math.abs(s.y - s.baseY)) / 200) : 1;
+                    if (alpha <= 0) { s.dead = true; s.drifting = false; return; }
+
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.translate(s.x, s.y);
+
+                    if (s.isStructure) {
+                        // ── Structure: hexagonal platform ──
+                        ctx.beginPath();
+                        for (let i = 0; i < 6; i++) {
+                            const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+                            i === 0 ? ctx.moveTo(Math.cos(a)*sz, Math.sin(a)*sz)
+                                    : ctx.lineTo(Math.cos(a)*sz, Math.sin(a)*sz);
+                        }
+                        ctx.closePath();
+                        ctx.fillStyle = s.color + '55';
+                        ctx.strokeStyle = s.color;
+                        ctx.lineWidth = 1.5;
+                        ctx.shadowColor = s.color;
+                        ctx.shadowBlur  = 8;
+                        ctx.fill();
+                        ctx.stroke();
+
+                    } else if (s.cls === 'Capitol') {
+                        // ── Capitol ship: large elongated cruiser body ──
+                        ctx.beginPath();
+                        ctx.moveTo(dir * sz,      0);
+                        ctx.lineTo(dir * (sz*0.4), -sz*0.45);
+                        ctx.lineTo(dir * -sz,       -sz*0.25);
+                        ctx.lineTo(dir * -sz*1.1,   0);
+                        ctx.lineTo(dir * -sz,        sz*0.25);
+                        ctx.lineTo(dir * (sz*0.4),  sz*0.45);
+                        ctx.closePath();
+                        ctx.fillStyle = s.color;
+                        ctx.shadowColor = s.color; ctx.shadowBlur = 12;
+                        ctx.fill();
+                        // Secondary hull stripe
+                        ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(dir * sz * 0.5, -sz * 0.15);
+                        ctx.lineTo(dir * -sz * 0.8, -sz * 0.15);
+                        ctx.moveTo(dir * sz * 0.5,  sz * 0.15);
+                        ctx.lineTo(dir * -sz * 0.8,  sz * 0.15);
+                        ctx.stroke();
+
+                    } else if (s.cls === 'Battleship' || s.cls === 'Cruiser') {
+                        // ── Heavy ship: thick wedge with wing stubs ──
+                        ctx.beginPath();
+                        ctx.moveTo(dir * sz,      0);
+                        ctx.lineTo(dir * sz*0.3, -sz*0.5);
+                        ctx.lineTo(dir * -sz*0.7, -sz*0.35);
+                        ctx.lineTo(dir * -sz,      0);
+                        ctx.lineTo(dir * -sz*0.7,  sz*0.35);
+                        ctx.lineTo(dir * sz*0.3,   sz*0.5);
+                        ctx.closePath();
+                        ctx.fillStyle = s.color;
+                        ctx.shadowColor = s.color; ctx.shadowBlur = 10;
+                        ctx.fill();
+                        // Wing stubs
+                        ctx.beginPath();
+                        ctx.moveTo(dir * 0, -sz * 0.42);
+                        ctx.lineTo(dir * -sz * 0.3, -sz * 0.75);
+                        ctx.lineTo(dir * -sz * 0.65, -sz * 0.45);
+                        ctx.closePath();
+                        ctx.moveTo(dir * 0,  sz * 0.42);
+                        ctx.lineTo(dir * -sz * 0.3, sz * 0.75);
+                        ctx.lineTo(dir * -sz * 0.65, sz * 0.45);
+                        ctx.closePath();
+                        ctx.fillStyle = s.color + 'bb';
+                        ctx.fill();
+
+                    } else if (s.cls === 'Destroyer' || s.cls === 'Frigate') {
+                        // ── Medium ship: arrow with swept wings ──
+                        ctx.beginPath();
+                        ctx.moveTo(dir * sz,      0);
+                        ctx.lineTo(dir * sz*0.1, -sz*0.4);
+                        ctx.lineTo(dir * -sz*0.5, -sz*0.55);
+                        ctx.lineTo(dir * -sz,      -sz*0.2);
+                        ctx.lineTo(dir * -sz*0.8,  0);
+                        ctx.lineTo(dir * -sz,       sz*0.2);
+                        ctx.lineTo(dir * -sz*0.5,   sz*0.55);
+                        ctx.lineTo(dir * sz*0.1,    sz*0.4);
+                        ctx.closePath();
+                        ctx.fillStyle = s.color;
+                        ctx.shadowColor = s.color; ctx.shadowBlur = 8;
+                        ctx.fill();
+
+                    } else {
+                        // ── Light ship (Fighter/Corvette): slim dart ──
+                        ctx.beginPath();
+                        ctx.moveTo(dir * sz,     0);
+                        ctx.lineTo(dir * -sz*0.4, -sz*0.5);
+                        ctx.lineTo(dir * -sz*0.9,  0);
+                        ctx.lineTo(dir * -sz*0.4,  sz*0.5);
+                        ctx.closePath();
+                        ctx.fillStyle = s.color;
+                        ctx.shadowColor = s.color; ctx.shadowBlur = 6;
+                        ctx.fill();
+                    }
+
+                    // Engine glow — scaled to ship size
+                    ctx.shadowBlur = 0;
+                    const engR = Math.max(1.5, sz * 0.22);
+                    const engPulse = 0.7 + 0.3 * Math.sin(frame * 0.18 + s.baseY);
+                    ctx.beginPath();
+                    ctx.arc(dir * -sz * 0.85, 0, engR * engPulse, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(180,220,255,${engPulse})`;
+                    ctx.shadowColor = '#aaddff'; ctx.shadowBlur = engR * 4;
+                    ctx.fill();
+
+                    // Class label (only for large ships, when zoomed enough)
+                    if (sz >= 17 && !s.isStructure) {
+                        ctx.shadowBlur = 0;
+                        ctx.font = `bold ${Math.max(7, sz * 0.45)}px sans-serif`;
+                        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(s.label.split(' ').pop().slice(0,7), 0, 0);
+                    }
+
+                    // HP bar — scaled, shown once damaged
+                    if (s.hp < s.maxHp && !s.drifting) {
+                        const pct = s.hp / s.maxHp;
+                        const bw  = sz * 2.2;
+                        ctx.shadowBlur = 0;
+                        ctx.fillStyle = '#1a1a2e';
+                        ctx.fillRect(-bw/2, -sz - 5, bw, 3);
+                        ctx.fillStyle = pct > 0.5 ? '#00ff88' : pct > 0.25 ? '#ffcc00' : '#ff4444';
+                        ctx.fillRect(-bw/2, -sz - 5, bw * pct, 3);
+                    }
+
                     ctx.restore();
                 };
 
-                const spawnExplosion = (x, y, big) => {
-                    const count = big ? 18 : 9;
+                const spawnExplosion = (x, y, big, shipSize) => {
+                    const sz    = shipSize || (big ? 26 : 8);
+                    const count = big ? 22 : 11;
+                    const maxR  = sz * 1.8;
                     for (let i = 0; i < count; i++) {
-                        const angle = (i / count) * Math.PI * 2 + rnd(0, 0.4);
-                        const speed = rnd(big ? 1.5 : 0.8, big ? 4 : 2.2);
-                        particles.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
-                            life: 1, decay: rnd(0.025, 0.055),
-                            color: ['#ff9900','#ff6600','#ffcc00','#ffffff'][Math.floor(Math.random()*4)],
-                            size: rnd(big ? 2 : 1, big ? 5 : 3) });
+                        const angle = (i / count) * Math.PI * 2 + rnd(0, 0.5);
+                        const speed = rnd(big ? sz*0.06 : sz*0.04, big ? sz*0.16 : sz*0.10);
+                        particles.push({
+                            x, y,
+                            vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+                            life: 1, decay: rnd(0.018, 0.045),
+                            color: ['#ff9900','#ff6600','#ffcc00','#ffffff','#ff3300'][Math.floor(Math.random()*5)],
+                            size: rnd(big ? sz*0.12 : sz*0.08, big ? sz*0.22 : sz*0.14),
+                        });
                     }
-                    explosions.push({ x, y, r: 0, maxR: big ? 30 : 18, life: 1, decay: 0.06 });
-                    if (big) screenShake = 8;
+                    explosions.push({ x, y, r: 0, maxR, life: 1, decay: big ? 0.042 : 0.065 });
+                    if (big) screenShake = Math.min(12, sz * 0.45);
                 };
 
                 const killShip = (s) => {
+                    if (s.dead) return;
                     s.dead = true;
-                    spawnExplosion(s.x, s.y, s.maxHp > 200);
+                    // Add to kill feed
+                    const feedColor = s.side === 'defender' ? '#00ff88' : '#ff6666';
+                    const feedLabel = s.isStructure ? s.label : (s.label || s.name || s.cls);
+                    killFeed.unshift({ text: feedLabel + ' destroyed', color: feedColor, life: 1 });
+                    if (killFeed.length > MAX_FEED) killFeed.pop();
+                    // Big ships get a second delayed explosion
+                    spawnExplosion(s.x, s.y, s.maxHp > 200, s.size);
+                    if (s.maxHp > 800) {
+                        setTimeout(() => spawnExplosion(
+                            s.x + (Math.random()-0.5)*s.size*2,
+                            s.y + (Math.random()-0.5)*s.size*2, true, s.size), 180);
+                    }
+                    // Set drift so the ship tumbles offscreen
+                    if (!s.isStructure) {
+                        s.dead     = false; // keep alive for drift rendering
+                        s.drifting = true;
+                        const angle = Math.random() * Math.PI * 2;
+                        const spd   = 0.4 + Math.random() * 0.8;
+                        s.driftVx  = Math.cos(angle) * spd;
+                        s.driftVy  = Math.sin(angle) * spd + (s.side==='attacker' ? 0.1 : -0.1);
+                        setTimeout(() => { s.dead = true; s.drifting = false; }, 4000);
+                    }
                 };
 
                 // Schedule deaths based on outcome
@@ -17712,8 +17955,8 @@ const SHIP_IMAGE_DATA = {
                 };
 
                 const fireProjFromTo = (src, targets) => {
-                    const alive = targets.filter(t => !t.dead);
-                    if (!alive.length || src.dead) return;
+                    const alive = targets.filter(t => !t.dead && !t.drifting);
+                    if (!alive.length || src.dead || src.drifting) return;
                     const tgt = alive[Math.floor(Math.random() * alive.length)];
                     if (src.instant) {
                         laserFlash.push({ x1: src.x, y1: src.y, x2: tgt.x, y2: tgt.y, life: 0.8, color: src.projColor });
@@ -17721,10 +17964,15 @@ const SHIP_IMAGE_DATA = {
                     }
                     const dx = tgt.x - src.x, dy = tgt.y - src.y;
                     const len = Math.sqrt(dx*dx + dy*dy) || 1;
+                    const isNuclear   = src.projColor === '#ff9900';
+                    const isKinetic   = src.projColor === '#c0d0ff' || src.projColor === '#ffe566';
                     projectiles.push({
                         x: src.x, y: src.y,
                         vx: (dx/len) * src.projSpeed, vy: (dy/len) * src.projSpeed,
-                        color: src.projColor, life: 1, size: 3,
+                        color: src.projColor, life: 1,
+                        size: isNuclear ? 5 : 2.5,
+                        nuclear: isNuclear,
+                        trail:   isKinetic,
                         tx: tgt.x, ty: tgt.y,
                     });
                 };
@@ -17774,9 +18022,15 @@ const SHIP_IMAGE_DATA = {
                     // Update deaths
                     tickDeaths();
 
+                    // Update ship movement and drift
+                    allShips.forEach(s => {
+                        updateShipMovement(s);
+                        updateDrift(s);
+                    });
+
                     // Fire projectiles every ~40 frames per ship
                     allShips.forEach(s => {
-                        if (s.dead) return;
+                        if (s.dead || s.drifting) return;
                         s.fireCooldown--;
                         if (s.fireCooldown <= 0) {
                             s.fireCooldown = 25 + Math.floor(Math.random() * 30);
@@ -17803,29 +18057,65 @@ const SHIP_IMAGE_DATA = {
                     projectiles.forEach(p => {
                         p.x += p.vx; p.y += p.vy;
                         ctx.save();
-                        ctx.beginPath();
-                        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                        ctx.fillStyle = p.color;
-                        ctx.shadowColor = p.color;
-                        ctx.shadowBlur  = 10;
                         ctx.globalAlpha = p.life;
-                        ctx.fill();
+                        if (p.nuclear) {
+                            // Nuclear: large pulsing orb with inner core
+                            const pulse = 0.8 + 0.2 * Math.sin(frame * 0.3);
+                            const nGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 2);
+                            nGrad.addColorStop(0,   `rgba(255,255,200,${p.life})`);
+                            nGrad.addColorStop(0.4, `rgba(255,140,0,${p.life * 0.8})`);
+                            nGrad.addColorStop(1,   `rgba(255,60,0,0)`);
+                            ctx.fillStyle = nGrad;
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, p.size * 2 * pulse, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (p.trail) {
+                            // Kinetic/ballistic: draw a trailing streak
+                            ctx.strokeStyle = p.color;
+                            ctx.lineWidth = p.size * 0.8;
+                            ctx.lineCap = 'round';
+                            ctx.shadowColor = p.color;
+                            ctx.shadowBlur  = 6;
+                            ctx.globalAlpha = p.life * 0.7;
+                            ctx.beginPath();
+                            ctx.moveTo(p.x - p.vx * 3, p.y - p.vy * 3);
+                            ctx.lineTo(p.x, p.y);
+                            ctx.stroke();
+                        } else {
+                            // Default: glowing dot
+                            ctx.beginPath();
+                            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                            ctx.fillStyle = p.color;
+                            ctx.shadowColor = p.color;
+                            ctx.shadowBlur  = 10;
+                            ctx.fill();
+                        }
                         ctx.restore();
-                        p.life -= 0.015;
+                        p.life -= 0.012;
                     });
                     projectiles.splice(0, projectiles.length, ...projectiles.filter(p => p.life > 0));
 
                     // Draw explosions
                     explosions.forEach(e => {
+                        if (e.r <= 0) { e.r = 0.1; }
                         ctx.save();
+                        // Outer fireball
                         const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r);
-                        grad.addColorStop(0, `rgba(255,220,100,${e.life})`);
-                        grad.addColorStop(0.5, `rgba(255,100,0,${e.life * 0.6})`);
-                        grad.addColorStop(1, `rgba(255,50,0,0)`);
+                        grad.addColorStop(0,   `rgba(255,255,200,${e.life})`);
+                        grad.addColorStop(0.3, `rgba(255,200,60,${e.life * 0.9})`);
+                        grad.addColorStop(0.6, `rgba(255,80,0,${e.life * 0.6})`);
+                        grad.addColorStop(1,   `rgba(60,0,0,0)`);
                         ctx.fillStyle = grad;
                         ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill();
+                        // Shockwave ring
+                        if (e.r > e.maxR * 0.3) {
+                            ctx.strokeStyle = `rgba(255,180,80,${e.life * 0.4})`;
+                            ctx.lineWidth = 1.5;
+                            ctx.beginPath(); ctx.arc(e.x, e.y, e.r * 1.3, 0, Math.PI * 2); ctx.stroke();
+                        }
                         ctx.restore();
-                        e.r += 2.5; e.life -= e.decay;
+                        e.r  += e.maxR * 0.08;
+                        e.life -= e.decay;
                     });
                     explosions.splice(0, explosions.length, ...explosions.filter(e => e.life > 0));
 
@@ -17842,8 +18132,56 @@ const SHIP_IMAGE_DATA = {
                     });
                     particles.splice(0, particles.length, ...particles.filter(p => p.life > 0));
 
-                    // Draw ships
-                    allShips.forEach(drawShip);
+                    // Draw ships (alive + drifting wrecks)
+                    allShips.forEach(s => {
+                        if (!s.dead || s.drifting) drawShip(s);
+                    });
+
+                    // Kill feed (top-right corner)
+                    ctx.save();
+                    killFeed.forEach((entry, i) => {
+                        if (entry.life <= 0) return;
+                        ctx.globalAlpha = entry.life * 0.85;
+                        ctx.font = `bold ${Math.max(9, Math.min(12, W * 0.013))}px sans-serif`;
+                        ctx.textAlign = 'right';
+                        ctx.fillStyle = entry.color;
+                        ctx.shadowColor = entry.color;
+                        ctx.shadowBlur  = 4;
+                        ctx.fillText('✕ ' + entry.text, W - 12, 28 + i * 16);
+                        entry.life -= 0.008;
+                    });
+                    ctx.restore();
+
+                    // Battle phase label (top centre)
+                    const phaseT = frame / MAX_FRAMES;
+                    const phaseLabel = phaseT < 0.15 ? 'OPENING VOLLEY'
+                        : phaseT < 0.75 ? 'ENGAGEMENT'
+                        : phaseT < 0.92 ? 'FINAL PUSH'
+                        : isVictory ? 'VICTORY' : 'DEFEAT';
+                    const phaseColor = phaseT >= 0.92
+                        ? (isVictory ? '#00ff88' : '#ff4444')
+                        : 'rgba(255,255,255,0.3)';
+                    ctx.save();
+                    ctx.font = `bold ${Math.max(10, Math.min(14, W * 0.016))}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = phaseColor;
+                    ctx.shadowColor = phaseColor;
+                    ctx.shadowBlur  = phaseT >= 0.92 ? 14 : 0;
+                    ctx.fillText(phaseLabel, W / 2, 14);
+                    ctx.restore();
+
+                    // Ship count display
+                    const atkAlive = attackerShips.filter(s => !s.dead || s.drifting).length;
+                    const defAlive = defenderShips.filter(s => !s.dead || s.drifting).length;
+                    ctx.save();
+                    ctx.font = `${Math.max(9, Math.min(11, W * 0.012))}px sans-serif`;
+                    ctx.fillStyle = 'rgba(0,217,255,0.6)';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`⚡ ${atkAlive} ships`, 10, H - 10);
+                    ctx.fillStyle = 'rgba(255,74,74,0.6)';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`${defAlive} ships ⚡`, W - 10, H - 10);
+                    ctx.restore();
 
                     // Final outcome flash at end
                     if (frame > MAX_FRAMES - 60) {
