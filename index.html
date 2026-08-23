@@ -6527,64 +6527,64 @@
         const SHIP_CLASSES = {
             // TERRAN EMPIRE SHIPS (Ballistic, EM, Kinetic, Nuclear)
             'Terran Empire': [
-                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'Kinetic', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Small, boxy, and utilitarian flying containers with engines' },
-                { name: 'Drone Striker', class: 'Drone', icon: '🛸', damage: 1, damageType: 'Ballistic', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 5, time: 4, description: 'Sleek unmanned ships designed for speed and agility' },
-                { name: 'Scout', class: 'Scout', icon: '🚀', damage: 0, damageType: 'EM', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast reconnaissance vessel' },
-                { name: 'Wasp Frigate', class: 'Frigate', icon: '⚓', damage: 2, damageType: 'Ballistic', hitPoints: 5, hull: 4, shield: 3, metalCost: 5, creditCost: 18, time: 45, description: 'Streamlined hull with multiple weapon hardpoints for escort missions' },
-                { name: 'Hornet Frigate', class: 'Frigate', icon: '⚓', damage: 3, damageType: 'Kinetic', hitPoints: 5, hull: 4, shield: 3, metalCost: 11, creditCost: 19, time: 50, description: 'Aggressive frigate with darker armor and potent weapons' },
-                { name: 'Wolf Cruiser', class: 'Cruiser', icon: '🛡️', damage: 8, damageType: 'Ballistic', hitPoints: 10, hull: 8, shield: 6, metalCost: 25, creditCost: 120, time: 200, description: 'Versatile warship with balanced design and multiple weapon systems' },
-                { name: 'Tiger Cruiser', class: 'Cruiser', icon: '🛡️', damage: 10, damageType: 'Nuclear', hitPoints: 12, hull: 10, shield: 7, metalCost: 20, creditCost: 150, time: 240, description: 'Heavily armed cruiser with menacing armor plating' },
-                { name: 'Eagle Cruiser', class: 'Cruiser', icon: '🛡️', damage: 15, damageType: 'EM', hitPoints: 20, hull: 16, shield: 10, metalCost: 22, creditCost: 150, time: 280, description: 'Most powerful Terran cruiser with advanced systems' },
-                { name: 'Freedom Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 75, damageType: 'Kinetic', hitPoints: 120, hull: 100, shield: 40, metalCost: 1025, creditCost: 50000, time: 4320, description: 'Massive warship for leading fleet operations' },
-                { name: 'Victory Battleship', class: 'Battleship', icon: '⚔️', damage: 125, damageType: 'Nuclear', hitPoints: 150, hull: 125, shield: 60, metalCost: 1500, creditCost: 78000, time: 10080, description: 'Pinnacle of Terran engineering with advanced weapons' },
-                { name: 'Titan Battleship', class: 'Battleship', icon: '⚔️', damage: 225, damageType: 'Ballistic', hitPoints: 300, hull: 250, shield: 100, metalCost: 9550, creditCost: 106000, time: 14400, description: 'Largest Terran battleship with devastating firepower' },
-                { name: 'Triumph Capitol Ship', class: 'Capitol', icon: '👑', damage: 245, damageType: 'Nuclear', hitPoints: 320, hull: 280, shield: 150, metalCost: 1200000, creditCost: 13250000, time: 172800, description: 'Mobile command center representing the pinnacle of naval power' }
+                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'Kinetic', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Small, boxy, and utilitarian flying containers with engines' , image: 'assets/ships/terran-drone-fodder.png'},
+                { name: 'Drone Striker', class: 'Drone', icon: '🛸', damage: 1, damageType: 'Ballistic', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 5, time: 4, description: 'Sleek unmanned ships designed for speed and agility' , image: 'assets/ships/terran-drone-striker.png'},
+                { name: 'Scout', class: 'Scout', icon: '🚀', damage: 0, damageType: 'EM', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast reconnaissance vessel' , image: 'assets/ships/terran-scout.png'},
+                { name: 'Wasp Frigate', class: 'Frigate', icon: '⚓', damage: 2, damageType: 'Ballistic', hitPoints: 5, hull: 4, shield: 3, metalCost: 5, creditCost: 18, time: 45, description: 'Streamlined hull with multiple weapon hardpoints for escort missions' , image: 'assets/ships/terran-wasp-frigate.png'},
+                { name: 'Hornet Frigate', class: 'Frigate', icon: '⚓', damage: 3, damageType: 'Kinetic', hitPoints: 5, hull: 4, shield: 3, metalCost: 11, creditCost: 19, time: 50, description: 'Aggressive frigate with darker armor and potent weapons' , image: 'assets/ships/terran-hornet-frigate.png'},
+                { name: 'Wolf Cruiser', class: 'Cruiser', icon: '🛡️', damage: 8, damageType: 'Ballistic', hitPoints: 10, hull: 8, shield: 6, metalCost: 25, creditCost: 120, time: 200, description: 'Versatile warship with balanced design and multiple weapon systems' , image: 'assets/ships/terran-wolf-cruiser.png'},
+                { name: 'Tiger Cruiser', class: 'Cruiser', icon: '🛡️', damage: 10, damageType: 'Nuclear', hitPoints: 12, hull: 10, shield: 7, metalCost: 20, creditCost: 150, time: 240, description: 'Heavily armed cruiser with menacing armor plating' , image: 'assets/ships/terran-tiger-cruiser.png'},
+                { name: 'Eagle Cruiser', class: 'Cruiser', icon: '🛡️', damage: 15, damageType: 'EM', hitPoints: 20, hull: 16, shield: 10, metalCost: 22, creditCost: 150, time: 280, description: 'Most powerful Terran cruiser with advanced systems' , image: 'assets/ships/terran-eagle-cruiser.png'},
+                { name: 'Freedom Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 75, damageType: 'Kinetic', hitPoints: 120, hull: 100, shield: 40, metalCost: 1025, creditCost: 50000, time: 4320, description: 'Massive warship for leading fleet operations' , image: 'assets/ships/terran-freedom-battlecruiser.png'},
+                { name: 'Victory Battleship', class: 'Battleship', icon: '⚔️', damage: 125, damageType: 'Nuclear', hitPoints: 150, hull: 125, shield: 60, metalCost: 1500, creditCost: 78000, time: 10080, description: 'Pinnacle of Terran engineering with advanced weapons' , image: 'assets/ships/terran-victory-battleship.png'},
+                { name: 'Titan Battleship', class: 'Battleship', icon: '⚔️', damage: 225, damageType: 'Ballistic', hitPoints: 300, hull: 250, shield: 100, metalCost: 9550, creditCost: 106000, time: 14400, description: 'Largest Terran battleship with devastating firepower' , image: 'assets/ships/terran-titan-battleship.png'},
+                { name: 'Triumph Capitol Ship', class: 'Capitol', icon: '👑', damage: 245, damageType: 'Nuclear', hitPoints: 320, hull: 280, shield: 150, metalCost: 1200000, creditCost: 13250000, time: 172800, description: 'Mobile command center representing the pinnacle of naval power' , image: 'assets/ships/terran-triumph-capitol.png'}
             ],
             
             // KOR'AI DYNASTY SHIPS (Acid, Laser)
             "Kor'ai Dynasty": [
-                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'Acid', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Angular metallic drones with dark Kor\'ai aesthetic' },
-                { name: 'Drone Bomber', class: 'Drone', icon: '🛸', damage: 2, damageType: 'Acid', hitPoints: 1, hull: 1, shield: 0, metalCost: 3, creditCost: 5, time: 4, description: 'Aggressive bomber drone with enhanced weaponry' },
-                { name: 'Scout', class: 'Scout', icon: '🚀', damage: 0, damageType: 'Laser', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast reconnaissance vessel' },
-                { name: 'Solar Frigate', class: 'Frigate', icon: '⚓', damage: 5, damageType: 'Laser', hitPoints: 3, hull: 2, shield: 2, metalCost: 5, creditCost: 19, time: 45, description: 'Sleek warship for escort and patrol missions' },
-                { name: 'Ray Frigate', class: 'Frigate', icon: '⚓', damage: 3, damageType: 'Acid', hitPoints: 5, hull: 4, shield: 3, metalCost: 9, creditCost: 20, time: 50, description: 'Aggressive frigate with enhanced armor plating' },
-                { name: 'Fang Cruiser', class: 'Cruiser', icon: '🛡️', damage: 10, damageType: 'Laser', hitPoints: 10, hull: 8, shield: 5, metalCost: 25, creditCost: 120, time: 200, description: 'Versatile cruiser with missile launchers and laser cannons' },
-                { name: 'Thorn Cruiser', class: 'Cruiser', icon: '🛡️', damage: 12, damageType: 'Acid', hitPoints: 15, hull: 12, shield: 7, metalCost: 25, creditCost: 160, time: 240, description: 'Heavily armed cruiser for intense combat' },
-                { name: 'Basilisk Battleship', class: 'Battleship', icon: '⚔️', damage: 180, damageType: 'Laser', hitPoints: 250, hull: 200, shield: 80, metalCost: 6000, creditCost: 100500, time: 12000, description: 'Massive warship with advanced weapon systems' },
-                { name: 'Venom Battleship', class: 'Battleship', icon: '⚔️', damage: 220, damageType: 'Acid', hitPoints: 325, hull: 275, shield: 100, metalCost: 150050, creditCost: 1575000, time: 14400, description: 'Largest Kor\'ai battleship leading fleet operations' },
-                { name: 'Basilisk Capitol Ship', class: 'Capitol', icon: '👑', damage: 220, damageType: 'Laser', hitPoints: 325, hull: 280, shield: 140, metalCost: 1500500, creditCost: 15750000, time: 172800, description: 'Supreme Kor\'ai warship commanding entire fleets' }
+                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'Acid', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Angular metallic drones with dark Kor\'ai aesthetic' , image: 'assets/ships/korai-drone-fodder.png'},
+                { name: 'Drone Bomber', class: 'Drone', icon: '🛸', damage: 2, damageType: 'Acid', hitPoints: 1, hull: 1, shield: 0, metalCost: 3, creditCost: 5, time: 4, description: 'Aggressive bomber drone with enhanced weaponry' , image: 'assets/ships/korai-drone-bomber.png'},
+                { name: 'Scout', class: 'Scout', icon: '🚀', damage: 0, damageType: 'Laser', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast reconnaissance vessel' , image: 'assets/ships/korai-scout.png'},
+                { name: 'Solar Frigate', class: 'Frigate', icon: '⚓', damage: 5, damageType: 'Laser', hitPoints: 3, hull: 2, shield: 2, metalCost: 5, creditCost: 19, time: 45, description: 'Sleek warship for escort and patrol missions' , image: 'assets/ships/korai-solar-frigate.png'},
+                { name: 'Ray Frigate', class: 'Frigate', icon: '⚓', damage: 3, damageType: 'Acid', hitPoints: 5, hull: 4, shield: 3, metalCost: 9, creditCost: 20, time: 50, description: 'Aggressive frigate with enhanced armor plating' , image: 'assets/ships/korai-ray-frigate.png'},
+                { name: 'Fang Cruiser', class: 'Cruiser', icon: '🛡️', damage: 10, damageType: 'Laser', hitPoints: 10, hull: 8, shield: 5, metalCost: 25, creditCost: 120, time: 200, description: 'Versatile cruiser with missile launchers and laser cannons' , image: 'assets/ships/korai-fang-cruiser.png'},
+                { name: 'Thorn Cruiser', class: 'Cruiser', icon: '🛡️', damage: 12, damageType: 'Acid', hitPoints: 15, hull: 12, shield: 7, metalCost: 25, creditCost: 160, time: 240, description: 'Heavily armed cruiser for intense combat' , image: 'assets/ships/korai-thorn-cruiser.png'},
+                { name: 'Basilisk Battleship', class: 'Battleship', icon: '⚔️', damage: 180, damageType: 'Laser', hitPoints: 250, hull: 200, shield: 80, metalCost: 6000, creditCost: 100500, time: 12000, description: 'Massive warship with advanced weapon systems' , image: 'assets/ships/korai-basilisk-battleship.png'},
+                { name: 'Venom Battleship', class: 'Battleship', icon: '⚔️', damage: 220, damageType: 'Acid', hitPoints: 325, hull: 275, shield: 100, metalCost: 150050, creditCost: 1575000, time: 14400, description: 'Largest Kor\'ai battleship leading fleet operations' , image: 'assets/ships/korai-venom-battleship.png'},
+                { name: 'Basilisk Capitol Ship', class: 'Capitol', icon: '👑', damage: 220, damageType: 'Laser', hitPoints: 325, hull: 280, shield: 140, metalCost: 1500500, creditCost: 15750000, time: 172800, description: 'Supreme Kor\'ai warship commanding entire fleets' , image: 'assets/ships/korai-basilisk-capitol.png'}
             ],
             
             // REAPER COLLECTIVE SHIPS (Ballistic, Kinetic, Nuclear)
             'Reaper Collective': [
-                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'Kinetic', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Makeshift angular drones with dark Reaper aesthetic' },
-                { name: 'Scout', class: 'Scout', icon: '🚀', damage: 0, damageType: 'Ballistic', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast reconnaissance vessel' },
-                { name: 'DIY Duster Frigate', class: 'Frigate', icon: '⚓', damage: 5, damageType: 'Ballistic', hitPoints: 2, hull: 2, shield: 1, metalCost: 12, creditCost: 15, time: 45, description: 'Makeshift ship built from salvaged parts with patchwork hull' },
-                { name: 'Duct Taped Zero Frigate', class: 'Frigate', icon: '⚓', damage: 7, damageType: 'Kinetic', hitPoints: 3, hull: 3, shield: 2, metalCost: 17, creditCost: 15, time: 50, description: 'Crudely constructed ship held together with duct tape' },
-                { name: 'Reinforced Rusty Cruiser', class: 'Cruiser', icon: '🛡️', damage: 20, damageType: 'Nuclear', hitPoints: 20, hull: 18, shield: 8, metalCost: 30, creditCost: 150, time: 200, description: 'Larger salvaged cruiser with robust hull' },
-                { name: 'Homebrew Cruiser', class: 'Cruiser', icon: '🛡️', damage: 18, damageType: 'Ballistic', hitPoints: 18, hull: 16, shield: 7, metalCost: 28, creditCost: 140, time: 220, description: 'Mix of salvaged and new parts with coherent design' },
-                { name: 'Pabst Cruiser', class: 'Cruiser', icon: '🛡️', damage: 22, damageType: 'Kinetic', hitPoints: 25, hull: 22, shield: 10, metalCost: 55, creditCost: 300, time: 260, description: 'Heavily armed with menacing armor plating' },
-                { name: 'Winnebago Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 90, damageType: 'Nuclear', hitPoints: 85, hull: 75, shield: 35, metalCost: 1150, creditCost: 38000, time: 4320, description: 'Massive warship leading fleet operations' },
-                { name: 'Meth Battleship', class: 'Battleship', icon: '⚔️', damage: 200, damageType: 'Ballistic', hitPoints: 200, hull: 180, shield: 75, metalCost: 7500, creditCost: 98000, time: 12000, description: 'Powerful battleship with advanced weaponry' },
-                { name: 'Junkyard Battleship', class: 'Battleship', icon: '⚔️', damage: 175, damageType: 'Kinetic', hitPoints: 135, hull: 120, shield: 50, metalCost: 1800, creditCost: 65000, time: 10800, description: 'Constructed entirely from salvaged parts with patchwork appearance' },
-                { name: 'Confederacy Capitol Ship', class: 'Capitol', icon: '👑', damage: 230, damageType: 'Nuclear', hitPoints: 275, hull: 240, shield: 120, metalCost: 1000000, creditCost: 10005000, time: 172800, description: 'Supreme Reaper warship commanding the fleet' }
+                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'Kinetic', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Makeshift angular drones with dark Reaper aesthetic' , image: 'assets/ships/reaper-drone-fodder.png'},
+                { name: 'Scout', class: 'Scout', icon: '🚀', damage: 0, damageType: 'Ballistic', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast reconnaissance vessel' , image: 'assets/ships/reaper-scout.png'},
+                { name: 'DIY Duster Frigate', class: 'Frigate', icon: '⚓', damage: 5, damageType: 'Ballistic', hitPoints: 2, hull: 2, shield: 1, metalCost: 12, creditCost: 15, time: 45, description: 'Makeshift ship built from salvaged parts with patchwork hull' , image: 'assets/ships/reaper-diy-duster-frigate.png'},
+                { name: 'Duct Taped Zero Frigate', class: 'Frigate', icon: '⚓', damage: 7, damageType: 'Kinetic', hitPoints: 3, hull: 3, shield: 2, metalCost: 17, creditCost: 15, time: 50, description: 'Crudely constructed ship held together with duct tape' , image: 'assets/ships/reaper-duct-taped-zero-frigate.png'},
+                { name: 'Reinforced Rusty Cruiser', class: 'Cruiser', icon: '🛡️', damage: 20, damageType: 'Nuclear', hitPoints: 20, hull: 18, shield: 8, metalCost: 30, creditCost: 150, time: 200, description: 'Larger salvaged cruiser with robust hull' , image: 'assets/ships/reaper-reinforced-rusty-cruiser.png'},
+                { name: 'Homebrew Cruiser', class: 'Cruiser', icon: '🛡️', damage: 18, damageType: 'Ballistic', hitPoints: 18, hull: 16, shield: 7, metalCost: 28, creditCost: 140, time: 220, description: 'Mix of salvaged and new parts with coherent design' , image: 'assets/ships/reaper-homebrew-cruiser.png'},
+                { name: 'Pabst Cruiser', class: 'Cruiser', icon: '🛡️', damage: 22, damageType: 'Kinetic', hitPoints: 25, hull: 22, shield: 10, metalCost: 55, creditCost: 300, time: 260, description: 'Heavily armed with menacing armor plating' , image: 'assets/ships/reaper-pabst-cruiser.png'},
+                { name: 'Winnebago Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 90, damageType: 'Nuclear', hitPoints: 85, hull: 75, shield: 35, metalCost: 1150, creditCost: 38000, time: 4320, description: 'Massive warship leading fleet operations' , image: 'assets/ships/reaper-winnebago-battlecruiser.png'},
+                { name: 'Meth Battleship', class: 'Battleship', icon: '⚔️', damage: 200, damageType: 'Ballistic', hitPoints: 200, hull: 180, shield: 75, metalCost: 7500, creditCost: 98000, time: 12000, description: 'Powerful battleship with advanced weaponry' , image: 'assets/ships/reaper-meth-battleship.png'},
+                { name: 'Junkyard Battleship', class: 'Battleship', icon: '⚔️', damage: 175, damageType: 'Kinetic', hitPoints: 135, hull: 120, shield: 50, metalCost: 1800, creditCost: 65000, time: 10800, description: 'Constructed entirely from salvaged parts with patchwork appearance' , image: 'assets/ships/reaper-junkyard-battleship.png'},
+                { name: 'Confederacy Capitol Ship', class: 'Capitol', icon: '👑', damage: 230, damageType: 'Nuclear', hitPoints: 275, hull: 240, shield: 120, metalCost: 1000000, creditCost: 10005000, time: 172800, description: 'Supreme Reaper warship commanding the fleet' , image: 'assets/ships/reaper-confederacy-capitol.png'}
             ],
             
             // THE ASCENDED SHIPS (Laser, EM, Kinetic, Nuclear)
             'The Ascended': [
-                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'EM', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Mass-produced autonomous units to overwhelm enemy targeting' },
-                { name: 'Drone Striker', class: 'Drone', icon: '🛸', damage: 1, damageType: 'Laser', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 5, time: 4, description: 'Advanced offensive drone with high-yield energy emitters' },
-                { name: 'Scout Ship', class: 'Scout', icon: '🚀', damage: 0, damageType: 'EM', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast vessel with advanced stealth plating for reconnaissance' },
-                { name: 'Light Frigate', class: 'Frigate', icon: '⚓', damage: 3, damageType: 'Laser', hitPoints: 3, hull: 3, shield: 2, metalCost: 6, creditCost: 15, time: 45, description: 'Versatile support ship for point-defense and drone deployment' },
-                { name: 'Acolyte Frigate', class: 'Frigate', icon: '⚓', damage: 5, damageType: 'EM', hitPoints: 5, hull: 4, shield: 3, metalCost: 8, creditCost: 18, time: 50, description: 'Religious inquisitor ship for forced conversion missions' },
-                { name: 'Vision Cruiser', class: 'Cruiser', icon: '🛡️', damage: 18, damageType: 'Laser', hitPoints: 20, hull: 16, shield: 8, metalCost: 25, creditCost: 145, time: 200, description: 'Electronic warfare ship with consciousness interface technology' },
-                { name: 'Divine Cruiser', class: 'Cruiser', icon: '🛡️', damage: 23, damageType: 'Nuclear', hitPoints: 20, hull: 16, shield: 9, metalCost: 25, creditCost: 155, time: 240, description: 'Armed with Ancient beam weaponry of miraculous power' },
-                { name: 'Truth Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 25, damageType: 'EM', hitPoints: 25, hull: 20, shield: 12, metalCost: 35, creditCost: 200, time: 280, description: 'High-speed hunter-killer tuned to Ancient technology' },
-                { name: 'Tempest Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 100, damageType: 'Laser', hitPoints: 125, hull: 105, shield: 45, metalCost: 1000, creditCost: 40000, time: 4320, description: 'Generates localized spatial anomalies to trap fleets' },
-                { name: 'Transcendence Battleship', class: 'Battleship', icon: '⚔️', damage: 130, damageType: 'Kinetic', hitPoints: 150, hull: 130, shield: 65, metalCost: 1150, creditCost: 42000, time: 10080, description: 'Mobile cathedral housing thousands of devoted Heralds' },
-                { name: 'Rebirth Battleship', class: 'Battleship', icon: '⚔️', damage: 135, damageType: 'Nuclear', hitPoints: 130, hull: 110, shield: 55, metalCost: 950, creditCost: 50000, time: 12000, description: 'Purifies entire star systems with planetary-scale weapons' },
-                { name: 'Prophet Battleship', class: 'Battleship', icon: '⚔️', damage: 180, damageType: 'Laser', hitPoints: 200, hull: 175, shield: 80, metalCost: 7800, creditCost: 70000, time: 13000, description: 'Herald of the Eternal Return with devastating firepower' },
-                { name: 'Holy Endeavour Capitol Ship', class: 'Capitol', icon: '👑', damage: 225, damageType: 'EM', hitPoints: 355, hull: 315, shield: 160, metalCost: 1350000, creditCost: 15500000, time: 172800, description: 'Flagship powered by Ancient singularity core' }
+                { name: 'Drone Fodder', class: 'Drone', icon: '🛸', damage: 0, damageType: 'EM', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 2, time: 3, description: 'Mass-produced autonomous units to overwhelm enemy targeting' , image: 'assets/ships/ascended-drone-fodder.png'},
+                { name: 'Drone Striker', class: 'Drone', icon: '🛸', damage: 1, damageType: 'Laser', hitPoints: 1, hull: 1, shield: 0, metalCost: 2, creditCost: 5, time: 4, description: 'Advanced offensive drone with high-yield energy emitters' , image: 'assets/ships/ascended-drone-striker.png'},
+                { name: 'Scout Ship', class: 'Scout', icon: '🚀', damage: 0, damageType: 'EM', hitPoints: 2, hull: 2, shield: 1, metalCost: 5, creditCost: 10, time: 15, description: 'Fast vessel with advanced stealth plating for reconnaissance' , image: 'assets/ships/ascended-scout-ship.png'},
+                { name: 'Light Frigate', class: 'Frigate', icon: '⚓', damage: 3, damageType: 'Laser', hitPoints: 3, hull: 3, shield: 2, metalCost: 6, creditCost: 15, time: 45, description: 'Versatile support ship for point-defense and drone deployment' , image: 'assets/ships/ascended-light-frigate.png'},
+                { name: 'Acolyte Frigate', class: 'Frigate', icon: '⚓', damage: 5, damageType: 'EM', hitPoints: 5, hull: 4, shield: 3, metalCost: 8, creditCost: 18, time: 50, description: 'Religious inquisitor ship for forced conversion missions' , image: 'assets/ships/ascended-acolyte-frigate.png'},
+                { name: 'Vision Cruiser', class: 'Cruiser', icon: '🛡️', damage: 18, damageType: 'Laser', hitPoints: 20, hull: 16, shield: 8, metalCost: 25, creditCost: 145, time: 200, description: 'Electronic warfare ship with consciousness interface technology' , image: 'assets/ships/ascended-vision-cruiser.png'},
+                { name: 'Divine Cruiser', class: 'Cruiser', icon: '🛡️', damage: 23, damageType: 'Nuclear', hitPoints: 20, hull: 16, shield: 9, metalCost: 25, creditCost: 155, time: 240, description: 'Armed with Ancient beam weaponry of miraculous power' , image: 'assets/ships/ascended-divine-cruiser.png'},
+                { name: 'Truth Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 25, damageType: 'EM', hitPoints: 25, hull: 20, shield: 12, metalCost: 35, creditCost: 200, time: 280, description: 'High-speed hunter-killer tuned to Ancient technology' , image: 'assets/ships/ascended-truth-battlecruiser.png'},
+                { name: 'Tempest Battlecruiser', class: 'Battlecruiser', icon: '⚔️', damage: 100, damageType: 'Laser', hitPoints: 125, hull: 105, shield: 45, metalCost: 1000, creditCost: 40000, time: 4320, description: 'Generates localized spatial anomalies to trap fleets' , image: 'assets/ships/ascended-tempest-battlecruiser.png'},
+                { name: 'Transcendence Battleship', class: 'Battleship', icon: '⚔️', damage: 130, damageType: 'Kinetic', hitPoints: 150, hull: 130, shield: 65, metalCost: 1150, creditCost: 42000, time: 10080, description: 'Mobile cathedral housing thousands of devoted Heralds' , image: 'assets/ships/ascended-transcendence-battleship.png'},
+                { name: 'Rebirth Battleship', class: 'Battleship', icon: '⚔️', damage: 135, damageType: 'Nuclear', hitPoints: 130, hull: 110, shield: 55, metalCost: 950, creditCost: 50000, time: 12000, description: 'Purifies entire star systems with planetary-scale weapons' , image: 'assets/ships/ascended-rebirth-battleship.png'},
+                { name: 'Prophet Battleship', class: 'Battleship', icon: '⚔️', damage: 180, damageType: 'Laser', hitPoints: 200, hull: 175, shield: 80, metalCost: 7800, creditCost: 70000, time: 13000, description: 'Herald of the Eternal Return with devastating firepower' , image: 'assets/ships/ascended-prophet-battleship.png'},
+                { name: 'Holy Endeavour Capitol Ship', class: 'Capitol', icon: '👑', damage: 225, damageType: 'EM', hitPoints: 355, hull: 315, shield: 160, metalCost: 1350000, creditCost: 15500000, time: 172800, description: 'Flagship powered by Ancient singularity core' , image: 'assets/ships/ascended-holy-endeavour-capitol.png'}
             ],
 
             // THE VIRAL RACE SHIPS (Biological, Spore, Necrotic, Psionic)
@@ -6628,6 +6628,27 @@
             ]
         };
         
+        // Lookup table: ship name -> ship definition (incl. image), for battle-animation rendering.
+        // First race that defines a given name wins (a few generic names like 'Scout' repeat across races).
+        const SHIP_IMAGE_LOOKUP = {};
+        Object.values(SHIP_CLASSES).forEach(list => {
+            list.forEach(s => {
+                if (s.image && !SHIP_IMAGE_LOOKUP[s.name]) SHIP_IMAGE_LOOKUP[s.name] = s.image;
+            });
+        });
+        // Simple lazy-loading image cache shared by the battle animation canvas.
+        const SHIP_IMAGE_CACHE = {};
+        function getShipImage(path) {
+            if (!path) return null;
+            let img = SHIP_IMAGE_CACHE[path];
+            if (!img) {
+                img = new Image();
+                img.src = path;
+                SHIP_IMAGE_CACHE[path] = img;
+            }
+            return (img.complete && img.naturalWidth > 0) ? img : null;
+        }
+
         // Legacy reference for backward compatibility
         const SHIP_CLASSES_LEGACY = [
             { name: 'Drone', time: 4, icon: '🛸', cost: { credits: 100, metal: 50, he3: 10 } },
@@ -17598,6 +17619,7 @@ const SHIP_IMAGE_DATA = {
                         cls,
                         name: opts.name || cls,
                         label: opts.label || opts.name || cls,
+                        image: opts.image || null,
                         fireCooldown: Math.random() * 60,
                         // Building-based defenders fire from fixed positions
                         fixed: opts.fixed || false,
@@ -17622,6 +17644,7 @@ const SHIP_IMAGE_DATA = {
                             dmg: shipDef.damage || 20,
                             cls, side: 'attacker', name, label: name,
                             projOverride: projDef,
+                            image: shipDef.image || SHIP_IMAGE_LOOKUP[name] || null,
                         }));
                         atkCol++;
                         if (atkCol >= atkMaxCol) { atkCol = 0; atkRow++; }
@@ -17636,16 +17659,21 @@ const SHIP_IMAGE_DATA = {
                 // 1. Garrison ships
                 let defRow = 0, defCol = 0, defMaxCol = 4;
                 Object.entries(garrison).forEach(([type, data]) => {
+                    // Garrison keys are often real ship names (e.g. 'Wolf Cruiser') — prefer their
+                    // actual class/image over the generic bot-ship fallback stats when recognized.
+                    const namedDef = SHIP_IMAGE_LOOKUP[type] ? inferClass({ name: type, hitPoints: data.hp }) : null;
                     const gs   = GENERIC_STATS[type] || GENERIC_STATS.Fighter;
-                    const cfg  = CLASS_CONFIG[gs.cls] || CLASS_CONFIG.Fighter;
+                    const cls  = namedDef || gs.cls;
+                    const cfg  = CLASS_CONFIG[cls] || CLASS_CONFIG.Fighter;
                     const cnt  = Math.min(data.count || 1, 15);
                     for (let i = 0; i < cnt; i++) {
                         defenderShips.push(makeShip({
                             x: W - 30 - defCol * (cfg.spacing + 6),
                             y: H * 0.12 + defRow * (cfg.spacing + 6),
                             hp: gs.hp, dmg: gs.dmg,
-                            cls: gs.cls, side: 'defender', name: type, label: type,
+                            cls, side: 'defender', name: type, label: type,
                             color: '#ff4a4a',
+                            image: SHIP_IMAGE_LOOKUP[type] || null,
                         }));
                         defCol++;
                         if (defCol >= defMaxCol) { defCol = 0; defRow++; }
@@ -17767,6 +17795,21 @@ const SHIP_IMAGE_DATA = {
                         ctx.shadowBlur  = 8;
                         ctx.fill();
                         ctx.stroke();
+
+                    } else if (s.image && getShipImage(s.image)) {
+                        // ── Sprite ship: draw the chosen ship asset, nose rotated to face the enemy ──
+                        // Source art noses "up" (toward -Y); rotate ±90° so it noses toward dir (attacker
+                        // faces +X/right, defender faces -X/left) — this is what makes the two sides
+                        // visibly face each other during combat. Rotation is scoped to this draw only so
+                        // it doesn't affect the engine glow / label / HP bar drawn below.
+                        const img = getShipImage(s.image);
+                        const drawSz = sz * 2.6; // sprite art has internal padding vs. the vector hulls
+                        ctx.save();
+                        ctx.rotate(dir * Math.PI / 2);
+                        ctx.shadowColor = s.color || '#ffffff';
+                        ctx.shadowBlur  = 8;
+                        ctx.drawImage(img, -drawSz / 2, -drawSz / 2, drawSz, drawSz);
+                        ctx.restore();
 
                     } else if (s.cls === 'Capitol') {
                         // ── Capitol ship: large elongated cruiser body ──
