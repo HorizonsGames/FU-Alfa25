@@ -6595,6 +6595,7 @@
                     hitPoints: 105, hull: 105, shield: 0,
                     metalCost: 120, creditCost: 800, time: 180,
                     image: 'Rabies.png',
+                    battleSprite: 'assets/ships/viral-rabies.png', spriteFacing: 'left',
                     infectAbility: true,
                     description: 'A snarling bio-frigate whose barbed tendrils latch onto enemy hulls and inject Viral spores. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
                 },
@@ -6604,6 +6605,7 @@
                     hitPoints: 165, hull: 165, shield: 0,
                     metalCost: 400, creditCost: 2500, time: 480,
                     image: 'Anthrax.png',
+                    battleSprite: 'assets/ships/viral-anthrax.png', spriteFacing: 'left',
                     infectAbility: true,
                     description: 'A hulking bio-cruiser with reinforced bone-plating and necrotic injector cannons. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
                 },
@@ -6613,6 +6615,7 @@
                     hitPoints: 205, hull: 205, shield: 0,
                     metalCost: 8000, creditCost: 90000, time: 10800,
                     image: 'Zika.png',
+                    battleSprite: 'assets/ships/viral-zika.png', spriteFacing: 'left',
                     infectAbility: true,
                     description: 'A colossal bio-battleship that saturates entire fleet sectors with hybrid Spore/Organic payloads. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
                 },
@@ -6622,18 +6625,26 @@
                     hitPoints: 225, hull: 225, shield: 0,
                     metalCost: 1800000, creditCost: 16000000, time: 172800,
                     image: 'covid.png',
+                    battleSprite: 'assets/ships/viral-covid.png', spriteFacing: 'left',
                     infectAbility: true,
                     description: 'The apex Viral Capitol Ship. Radiates a Necrotic death-field that dissolves crew tissue and rewrites ship biology wholesale. Can INFECT & capture enemy ships. Capture 3 of the same type to reverse-engineer them.'
                 }
             ]
         };
         
-        // Lookup table: ship name -> ship definition (incl. image), for battle-animation rendering.
+        // Lookup table: ship name -> { image, facing }, for battle-animation rendering.
+        // battleSprite (a transparent, ship-only crop) is preferred over the full cinematic `image`
+        // when present — the Viral race's ship art is a wide illustrated scene, not a silhouette, so
+        // it uses a separate cropped/vignetted battleSprite plus spriteFacing:'left' (it already faces
+        // left in the source art, vs. the default 'up'-facing top-down sprites used by other races).
         // First race that defines a given name wins (a few generic names like 'Scout' repeat across races).
         const SHIP_IMAGE_LOOKUP = {};
         Object.values(SHIP_CLASSES).forEach(list => {
             list.forEach(s => {
-                if (s.image && !SHIP_IMAGE_LOOKUP[s.name]) SHIP_IMAGE_LOOKUP[s.name] = s.image;
+                const spritePath = s.battleSprite || s.image;
+                if (spritePath && !SHIP_IMAGE_LOOKUP[s.name]) {
+                    SHIP_IMAGE_LOOKUP[s.name] = { image: spritePath, facing: s.spriteFacing || 'up' };
+                }
             });
         });
         // Simple lazy-loading image cache shared by the battle animation canvas.
@@ -17620,6 +17631,7 @@ const SHIP_IMAGE_DATA = {
                         name: opts.name || cls,
                         label: opts.label || opts.name || cls,
                         image: opts.image || null,
+                        spriteFacing: opts.spriteFacing || 'up',
                         fireCooldown: Math.random() * 60,
                         // Building-based defenders fire from fixed positions
                         fixed: opts.fixed || false,
@@ -17644,7 +17656,8 @@ const SHIP_IMAGE_DATA = {
                             dmg: shipDef.damage || 20,
                             cls, side: 'attacker', name, label: name,
                             projOverride: projDef,
-                            image: shipDef.image || SHIP_IMAGE_LOOKUP[name] || null,
+                            image: shipDef.battleSprite || shipDef.image || SHIP_IMAGE_LOOKUP[name]?.image || null,
+                            spriteFacing: shipDef.spriteFacing || SHIP_IMAGE_LOOKUP[name]?.facing || 'up',
                         }));
                         atkCol++;
                         if (atkCol >= atkMaxCol) { atkCol = 0; atkRow++; }
@@ -17673,7 +17686,8 @@ const SHIP_IMAGE_DATA = {
                             hp: gs.hp, dmg: gs.dmg,
                             cls, side: 'defender', name: type, label: type,
                             color: '#ff4a4a',
-                            image: SHIP_IMAGE_LOOKUP[type] || null,
+                            image: SHIP_IMAGE_LOOKUP[type]?.image || null,
+                            spriteFacing: SHIP_IMAGE_LOOKUP[type]?.facing || 'up',
                         }));
                         defCol++;
                         if (defCol >= defMaxCol) { defCol = 0; defRow++; }
@@ -17797,15 +17811,23 @@ const SHIP_IMAGE_DATA = {
                         ctx.stroke();
 
                     } else if (s.image && getShipImage(s.image)) {
-                        // ── Sprite ship: draw the chosen ship asset, nose rotated to face the enemy ──
-                        // Source art noses "up" (toward -Y); rotate ±90° so it noses toward dir (attacker
-                        // faces +X/right, defender faces -X/left) — this is what makes the two sides
-                        // visibly face each other during combat. Rotation is scoped to this draw only so
-                        // it doesn't affect the engine glow / label / HP bar drawn below.
+                        // ── Sprite ship: draw the chosen ship asset, oriented to face the enemy ──
+                        // Two source conventions, set per-ship via spriteFacing:
+                        //   'up'   (default, the top-down 200Starships pack) — noses toward -Y, so
+                        //          rotate ±90° to point it toward dir (attacker=right, defender=left).
+                        //   'left' (the Viral race's cropped cinematic art) — already noses left, so
+                        //          the defender (dir=-1) needs no change and the attacker (dir=1) is
+                        //          simply mirrored horizontally to face right instead.
+                        // Scoped to this draw only so it doesn't affect the engine glow / label / HP
+                        // bar drawn below — that's what makes the two sides visibly face each other.
                         const img = getShipImage(s.image);
                         const drawSz = sz * 2.6; // sprite art has internal padding vs. the vector hulls
                         ctx.save();
-                        ctx.rotate(dir * Math.PI / 2);
+                        if (s.spriteFacing === 'left') {
+                            if (dir === 1) ctx.scale(-1, 1);
+                        } else {
+                            ctx.rotate(dir * Math.PI / 2);
+                        }
                         ctx.shadowColor = s.color || '#ffffff';
                         ctx.shadowBlur  = 8;
                         ctx.drawImage(img, -drawSz / 2, -drawSz / 2, drawSz, drawSz);
