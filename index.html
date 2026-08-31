@@ -397,6 +397,13 @@
             box-shadow: 0 8px 28px rgba(0,0,0,0.5);
         }
 
+        .race-option-locked, .race-startup-card.race-option-locked {
+            cursor: not-allowed;
+        }
+        .race-option-locked:hover, .race-startup-card.race-option-locked:hover {
+            transform: none;
+        }
+
         .race-option.selected {
             border-color: var(--accent-primary) !important;
             box-shadow: 0 0 24px rgba(0,217,255,0.35) !important;
@@ -4969,8 +4976,67 @@
         .planet-card { padding: 8px; }
     }
     </style>
+    <style>
+        .login-tab { flex:1;padding:10px;border-radius:8px 8px 0 0;font-weight:700;cursor:pointer;font-size:13px;letter-spacing:1px;
+            background:rgba(255,255,255,0.04);border:1px solid var(--border-color);color:var(--text-secondary); }
+        .login-tab.active { background:rgba(0,217,255,0.12);border-color:var(--accent-primary);color:var(--accent-primary); }
+    </style>
 </head>
 <body>
+    <script src="assets/js/multiplayerClient.js"></script>
+
+    <!-- ========== LOGIN SCREEN ========== -->
+    <!-- Real accounts (via MP backend when configured, local fallback otherwise) —
+         see handleLogin()/handleRegister() in the main script for the logic this
+         markup drives. Hidden automatically once a session starts. -->
+    <div id="loginScreen" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:100000;
+        background:radial-gradient(ellipse at center, var(--bg-tertiary) 0%, var(--bg-primary) 100%);
+        display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;overflow-y:auto;">
+        <div style="width:100%;max-width:420px;">
+            <div style="text-align:center;margin-bottom:24px;">
+                <div style="font-size:28px;font-weight:900;letter-spacing:3px;color:var(--accent-primary);text-shadow:var(--glow);">FRACTURED UNIVERSE</div>
+                <div style="font-size:12px;color:var(--text-secondary);letter-spacing:2px;margin-top:4px;">COMMAND YOUR EMPIRE</div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-bottom:16px;">
+                <button class="login-tab active" id="loginTabBtn" onclick="window.auth.switchTab('login')">LOGIN</button>
+                <button class="login-tab" id="registerTabBtn" onclick="window.auth.switchTab('register')">REGISTER</button>
+            </div>
+
+            <!-- ── Login form ── -->
+            <div id="loginForm" style="background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:0 0 10px 10px;padding:20px;">
+                <div id="loginError" style="display:none;background:rgba(255,51,102,0.12);border:1px solid var(--accent-danger);color:var(--accent-danger);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:12px;"></div>
+                <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">USERNAME</label>
+                <input type="text" id="loginUsername" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:12px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:13px;">
+                <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">PASSWORD</label>
+                <input type="password" id="loginPassword" autocomplete="current-password" onkeydown="if(event.key==='Enter')handleLogin()" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:16px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:13px;">
+                <button onclick="handleLogin()" style="width:100%;padding:12px;background:linear-gradient(135deg,var(--accent-primary),#0088aa);border:none;border-radius:6px;color:#001018;font-weight:900;font-size:13px;letter-spacing:1px;cursor:pointer;">ENTER THE UNIVERSE</button>
+            </div>
+
+            <!-- ── Register form ── -->
+            <div id="registerForm" style="display:none;background:rgba(255,255,255,0.03);border:1px solid var(--border-color);border-radius:0 0 10px 10px;padding:20px;">
+                <div id="registerError" style="display:none;background:rgba(255,51,102,0.12);border:1px solid var(--accent-danger);color:var(--accent-danger);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:12px;"></div>
+                <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">USERNAME</label>
+                <input type="text" id="registerUsername" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:10px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:13px;">
+                <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">EMAIL</label>
+                <input type="email" id="registerEmail" autocomplete="email" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:10px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:13px;">
+                <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">PASSWORD</label>
+                <input type="password" id="registerPassword" autocomplete="new-password" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:10px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:13px;">
+                <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:4px;">CONFIRM PASSWORD</label>
+                <input type="password" id="registerConfirm" autocomplete="new-password" onkeydown="if(event.key==='Enter')handleRegister()" style="width:100%;box-sizing:border-box;padding:10px 12px;margin-bottom:14px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:13px;">
+
+                <label style="display:block;font-size:11px;color:var(--text-secondary);margin-bottom:6px;">CHOOSE YOUR RACE</label>
+                <div id="raceOptions" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;max-height:220px;overflow-y:auto;"></div>
+
+                <button onclick="handleRegister()" style="width:100%;padding:12px;background:linear-gradient(135deg,var(--accent-secondary),#00aa55);border:none;border-radius:6px;color:#001a0d;font-weight:900;font-size:13px;letter-spacing:1px;cursor:pointer;">FOUND YOUR EMPIRE</button>
+            </div>
+
+            <div style="text-align:center;margin-top:14px;">
+                <button onclick="window.playAsGuest && window.playAsGuest()" style="background:none;border:none;color:var(--text-secondary);font-size:11px;cursor:pointer;text-decoration:underline;">Just testing? Play as guest (no account, progress won't be saved)</button>
+            </div>
+        </div>
+    </div>
+
     <div class="space-bg"></div>
     
     <div class="container">
@@ -6152,6 +6218,40 @@
     </div>
     
     <script>
+        // ── Multiplayer backend bootstrap ────────────────────────────────
+        // Set this to your deployed Heroku app URL once you've pushed the
+        // server/ project (e.g. 'https://your-fu-backend.herokuapp.com').
+        // Left blank/unreachable, the game runs exactly as it always has —
+        // every MP call below is wrapped so a missing/offline backend never
+        // breaks local play, it just silently stays in local-only mode.
+        const MP_CONFIG = {
+            serverUrl: '', // <-- fill in after `heroku create` / deploy
+            get enabled() { return !!this.serverUrl; },
+        };
+        const MP = (typeof MPClient !== 'undefined' && MP_CONFIG.serverUrl)
+            ? new MPClient(MP_CONFIG.serverUrl)
+            : null;
+        window.MP = MP; // used by battle-room wiring below and by animateBattle
+        let mpConnected = false;
+        // NOTE: MP.connect() is only called after a successful MP login/register
+        // (see handleLogin/handleRegister below) — it requires a session token,
+        // which doesn't exist yet at page load.
+        async function mpConnectSocket() {
+            if (!MP || !MP.token) return;
+            try { await MP.connect(); mpConnected = true; console.log('[MP] connected'); }
+            catch (e) { mpConnected = false; console.warn('[MP] live socket unavailable:', e.message); }
+        }
+
+        // The MP backend stores accountType lowercase ('admin', 'player', ...);
+        // the client's existing local auth system (and everything that reads
+        // playerData.accountType, e.g. isRaceUnlocked/loadPlayerData) expects it
+        // capitalized ('Admin', 'Player', ...). Normalize at the MP boundary
+        // rather than touching every call site.
+        function normalizeAccountType(accountType) {
+            if (!accountType) return 'Player';
+            return accountType.charAt(0).toUpperCase() + accountType.slice(1).toLowerCase();
+        }
+
         const PLANET_TYPES = ['Water', 'Ice', 'Desert', 'Forest', 'Balanced', 'Gas', 'Barren'];
         
         // Planet resource modifiers (positive = bonus, negative = penalty)
@@ -6520,9 +6620,31 @@
                 description: 'Biological annihilators - A galaxy-spanning plague reawakened by the screams of the dying',
                 difficulty: 'Hard',
                 modifiers: { mining: 15, population: 315, military: 95, credits: 10, foodProduction: 225 },
+                locked: true, lockReason: 'premium', lockPrice: '5000 Horizon Coins',
                 story: `They are not a civilization. They are a catastrophe that remembers itself. Before the Tarren Coalition, before the Kor\'ai trade routes, before the Reapers seized their first warship, the galaxy trembled before the Viral Race—a distributed biological holocaust that consumed the Guardian Peoples and left nothing but irradiated ruins and obsidian warnings. The Guardians did not defeat them. They only built a prison. And now the prison doors are opening. Reawakened by millennia of galactic warfare—the radiation, the psionic echoes of mass death, the screaming resonance of a galaxy at war with itself—the dormant spores and hive structures buried across forgotten systems have begun to pulse once more. Their ships are not built. They grow. Hulls of fused steel and swollen flesh. Corridors that breathe. Walls threaded with nervous-system tendrils. Their consumed worlds do not fall—they transform, oceans thickening to black-red sludge, forests becoming fields of pulsating organic growth, cities dissolving beneath mountains of spreading tissue. No cure has ever been discovered. No negotiation has ever been attempted. There is only the Hunger.`
             }
         ];
+
+        // Whether the given race can currently be selected. Locked races (see the
+        // `locked` flag above — right now just The Viral Race) require either a
+        // real purchase (checkout link TODO — see the lock banner in the race
+        // picker UI) or admin access. Admin access is checked two ways:
+        //   1. The logged-in player's own accountType === 'Admin' (real per-account
+        //      check — e.g. the seeded "Mister" account, see AuthManager._seedAdminAccount).
+        //      Only available once logged in, so this only unlocks the in-game
+        //      race-change popup, not the registration screen's race grid (a brand
+        //      new account's accountType isn't known until after it's created).
+        //   2. window.FU_ADMIN_MODE === true — a manual console override for local
+        //      dev use before any account exists. NOT secure; anyone could type
+        //      this in their own console. Real gating belongs server-side once
+        //      purchases actually exist.
+        function isRaceUnlocked(raceName) {
+            const race = RACES.find(r => r.name === raceName);
+            if (!race || !race.locked) return true;
+            const playerIsAdmin = window.game?.playerData?.accountType === 'Admin';
+            return playerIsAdmin || window.FU_ADMIN_MODE === true;
+        }
+
         
         const SHIP_CLASSES = {
             // TERRAN EMPIRE SHIPS (Ballistic, EM, Kinetic, Nuclear)
@@ -10337,16 +10459,19 @@
                                 <span class="guild-member-role ${role}">${role}</span>
                                 <span style="font-weight: 600; color: var(--text-primary);">${member}</span>
                             </div>
-                            ${isLeader && member !== guild.leader ? `
-                                <div style="display: flex; gap: 8px;">
+                            <div style="display: flex; gap: 8px;">
+                                ${member !== game.playerData.username ? `
+                                    <button class="guild-action-btn" style="padding: 6px 12px; font-size: 12px;" onclick="window.game.spectatePvPBattle('${member}')" title="Watch this member's battle live, if they're fighting right now">👁 Live</button>
+                                ` : ''}
+                                ${isLeader && member !== guild.leader ? `
                                     ${!guild.officers.includes(member) ? `
                                         <button class="guild-action-btn" style="padding: 6px 12px; font-size: 12px;" onclick="window.guildUI.promoteToOfficer('${member}')">Promote</button>
                                     ` : `
                                         <button class="guild-action-btn secondary" style="padding: 6px 12px; font-size: 12px;" onclick="window.guildUI.demoteOfficer('${member}')">Demote</button>
                                     `}
                                     <button class="guild-action-btn danger" style="padding: 6px 12px; font-size: 12px;" onclick="window.guildUI.kickMember('${member}')">Kick</button>
-                                </div>
-                            ` : ''}
+                                ` : ''}
+                            </div>
                         </div>
                     `;
                 }).join('');
@@ -11517,8 +11642,11 @@ const SHIP_IMAGE_DATA = {
                     }
                 }
                 
-                // Determine account type
-                let accountType = 'Admin'; // Default to Admin for testing
+                // Determine account type. Was previously "default every new account
+                // to Admin for testing" — fixed, since that silently made the Viral
+                // Race's admin-only lock meaningless (every registrant could unlock
+                // it). Only the explicit 'mister' account gets Admin now.
+                let accountType = 'Player';
                 if (username.toLowerCase() === 'mister') {
                     accountType = 'Admin';
                 }
@@ -11628,8 +11756,26 @@ const SHIP_IMAGE_DATA = {
                 this.db = new DatabaseManager();
                 this.currentSession = null;
                 this.selectedRace = null;
+                this._seedAdminAccount();
                 this.renderRaceOptions();
                 // Don't call updateOnlineCount here - will be called after all managers are initialized
+            }
+
+            // One-time local bootstrap for the "Mister" admin account, so it exists
+            // without anyone needing to click through registration. IMPORTANT: this
+            // is the local-only, no-real-backend auth system — passwords here are
+            // stored with a trivial reversible hash (see DatabaseManager.hashPassword)
+            // and this account is created identically, with the same known password,
+            // in every browser that loads the page. That's consistent with the rest
+            // of this local auth system's threat model (it's a client-side dev/test
+            // DB, not a real security boundary) but it means this password should be
+            // treated as public/known, not as a real secret. A genuinely secure admin
+            // account needs to live server-side on the MP backend (bcrypt-hashed,
+            // never shipped in client code) — see server/seed-admin.js for that path
+            // once the backend is deployed.
+            _seedAdminAccount() {
+                if (this.db.players.has('mister')) return; // already seeded
+                this.db.createPlayer('Mister', 'mister@fu-admin.local', 'Dazz2299!', 'Terran Empire');
             }
             
             switchTab(tab) {
@@ -11661,8 +11807,16 @@ const SHIP_IMAGE_DATA = {
                 container.innerHTML = RACES.map(race => {
                     const logo = RACE_LOGOS[race.name] || '';
                     const diffColor = DIFF_COLORS[race.difficulty] || '#8ba3c7';
-                    return `<div class="race-option" onclick="window.auth.selectRace('${race.name}')" data-race="${race.name}" style="--race-color:${race.color};">
+                    const locked = race.locked && !isRaceUnlocked(race.name);
+                    return `<div class="race-option ${locked ? 'race-option-locked' : ''}"
+                            onclick="${locked ? `window.auth.showLockedRaceNotice('${race.name}')` : `window.auth.selectRace('${race.name}')`}"
+                            data-race="${race.name}" style="--race-color:${race.color};position:relative;${locked ? 'filter:grayscale(70%);opacity:0.75;' : ''}">
                         ${logo ? `<img src="${logo}" alt="${race.name}">` : `<div style="height:100px;background:${race.color}22;display:flex;align-items:center;justify-content:center;font-size:40px;">⚔️</div>`}
+                        ${locked ? `
+                            <div style="position:absolute;top:6px;left:6px;right:6px;background:linear-gradient(135deg,#ffb700,#ff9500);color:#1a0f00;font-weight:900;font-size:10px;letter-spacing:0.5px;text-align:center;padding:5px 4px;border-radius:5px;box-shadow:0 2px 8px rgba(0,0,0,0.5);">
+                                🔒 BUY NOW! ${race.lockPrice || 'Premium'}!
+                            </div>
+                        ` : ''}
                         <div class="race-option-body">
                             <div class="race-option-header">
                                 <div class="race-option-name" style="color:${race.color};">${race.name}</div>
@@ -11675,11 +11829,23 @@ const SHIP_IMAGE_DATA = {
             }
             
             selectRace(raceName) {
+                const race = RACES.find(r => r.name === raceName);
+                if (race && race.locked && !isRaceUnlocked(raceName)) {
+                    this.showLockedRaceNotice(raceName);
+                    return;
+                }
                 this.selectedRace = raceName;
                 document.querySelectorAll('.race-option').forEach(opt => {
                     opt.classList.remove('selected');
                 });
                 document.querySelector(`[data-race="${raceName}"]`).classList.add('selected');
+            }
+
+            // Placeholder for the not-yet-built purchase flow — swap this alert for
+            // a real checkout link/modal once payments are wired up.
+            showLockedRaceNotice(raceName) {
+                const race = RACES.find(r => r.name === raceName);
+                alert(`🔒 ${raceName} is a premium race — ${race?.lockPrice || 'purchase required'}.\n\nCheckout isn't live yet. Check back soon!`);
             }
             
             async login() {
@@ -11908,6 +12074,11 @@ const SHIP_IMAGE_DATA = {
                 if (this.currentSession && window.game) {
                     const gameState = window.game.getGameState();
                     this.db.updatePlayerState(this.currentSession, gameState);
+                    // Write-through to the multiplayer backend when connected — fire-and-forget
+                    // so a slow/offline server never blocks or breaks local saving.
+                    if (window.MP && window.MP.token) {
+                        window.MP.saveState(gameState).catch((e) => console.warn('[MP] save failed (local save still succeeded):', e.message));
+                    }
                 }
             }
             
@@ -15253,12 +15424,18 @@ const SHIP_IMAGE_DATA = {
                     const isSelected = race.name === selectedRaceName;
                     const safeId = race.name.replace(/[^a-zA-Z0-9]/g, '_');
                     const loreShort = race.story ? race.story.slice(0, 180) + '…' : '';
+                    const locked = race.locked && !isRaceUnlocked(race.name);
                     return `
-                        <div class="race-startup-card ${isSelected ? 'selected' : ''}"
+                        <div class="race-startup-card ${isSelected ? 'selected' : ''} ${locked ? 'race-option-locked' : ''}"
                              id="rsc_${safeId}"
-                             onclick="window._racePopupSelect('${race.name.replace(/'/g, "\\'")}', '${race.color}')"
-                             style="border-color:${isSelected ? 'var(--accent-primary)' : race.color + '44'};">
+                             onclick="${locked ? `window._racePopupLockedNotice('${race.name.replace(/'/g, "\\'")}')` : `window._racePopupSelect('${race.name.replace(/'/g, "\\'")}', '${race.color}')`}"
+                             style="border-color:${isSelected ? 'var(--accent-primary)' : race.color + '44'};position:relative;${locked ? 'filter:grayscale(70%);opacity:0.75;' : ''}">
                             ${imgTag}
+                            ${locked ? `
+                                <div style="position:absolute;top:6px;left:6px;right:6px;background:linear-gradient(135deg,#ffb700,#ff9500);color:#1a0f00;font-weight:900;font-size:10px;letter-spacing:0.5px;text-align:center;padding:5px 4px;border-radius:5px;box-shadow:0 2px 8px rgba(0,0,0,0.5);z-index:2;">
+                                    🔒 BUY NOW! ${race.lockPrice || 'Premium'}!
+                                </div>
+                            ` : ''}
                             <div class="card-body">
                                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                                     <div class="card-name" style="color:${race.color};">${race.name}</div>
@@ -15297,6 +15474,11 @@ const SHIP_IMAGE_DATA = {
 
                 // Globals used by inline onclick handlers
                 window._racePopupSelect = (name, color) => {
+                    const race = RACES.find(r => r.name === name);
+                    if (race && race.locked && !isRaceUnlocked(name)) {
+                        window._racePopupLockedNotice(name);
+                        return;
+                    }
                     selectedRaceName = name;
                     document.querySelectorAll('.race-startup-card').forEach(c => {
                         c.classList.remove('selected');
@@ -15311,6 +15493,13 @@ const SHIP_IMAGE_DATA = {
                         btn.disabled = false;
                         btn.textContent = '🚀 ENTER THE GALAXY AS ' + name.toUpperCase();
                     }
+                };
+
+                // Placeholder for the not-yet-built purchase flow — swap this alert
+                // for a real checkout link/modal once payments are wired up.
+                window._racePopupLockedNotice = (name) => {
+                    const race = RACES.find(r => r.name === name);
+                    alert(`🔒 ${name} is a premium race — ${race?.lockPrice || 'purchase required'}.\n\nCheckout isn't live yet. Check back soon!`);
                 };
 
                 window._raceToggleLore = (safeId) => {
@@ -17302,7 +17491,8 @@ const SHIP_IMAGE_DATA = {
                         this._recordBattle({
                             outcome: 'victory', target: target.name, targetOwner: target.owner || 'Unclaimed',
                             attackPower, defense, attackForce, attackerLosses, defenderDestroyed,
-                            infectResults, timestamp: Date.now()
+                            infectResults, timestamp: Date.now(),
+                            defenderSnapshot: JSON.parse(JSON.stringify(target.botGarrison || {})),
                         });
 
                         this.renderOwnedPlanets();
@@ -17376,7 +17566,8 @@ const SHIP_IMAGE_DATA = {
                         this._recordBattle({
                             outcome: 'defeat', target: target.name, targetOwner: target.owner || 'Unclaimed',
                             attackPower, defense, attackForce, attackerLosses, defenderDestroyed: {},
-                            infectResults: [], timestamp: Date.now()
+                            infectResults: [], timestamp: Date.now(),
+                            defenderSnapshot: JSON.parse(JSON.stringify(target.botGarrison || {})),
                         });
 
                         // Void Salvage (Reaper Collective) — 10% chance to recover a random enemy ship on defeat
@@ -17564,6 +17755,19 @@ const SHIP_IMAGE_DATA = {
                 viz.appendChild(canvas);
                 const ctx = canvas.getContext('2d');
                 const W = canvas.width, H = canvas.height;
+
+                // Live PvP broadcast — join a room keyed by the attacker's own username so
+                // anyone spectating (see spectatePvPBattle) can find this fight. Best-effort:
+                // battles run identically with or without MP connected, this is purely a
+                // "let someone else watch" layer on top of the existing local simulation.
+                const pvpRoomId = (window.MP && window.MP.token)
+                    ? `pvp:${(this.playerData && this.playerData.username) || 'unknown'}`
+                    : null;
+                if (pvpRoomId) {
+                    window.MP.connect()
+                        .then(() => window.MP.joinRoom(pvpRoomId, 'pvp'))
+                        .catch((e) => console.warn('[MP] could not open live PvP room:', e.message));
+                }
 
                 // ── Ship class size, speed, and colour config ──
                 const CLASS_CONFIG = {
@@ -18044,7 +18248,10 @@ const SHIP_IMAGE_DATA = {
 
                 // ── Main render loop ──
                 const loop = () => {
-                    if (frame >= MAX_FRAMES || !document.getElementById('battleSimulation')) return;
+                    if (frame >= MAX_FRAMES || !document.getElementById('battleSimulation')) {
+                        if (pvpRoomId && window.MP) window.MP.leaveRoom(); // stop broadcasting once the fight/modal ends
+                        return;
+                    }
                     frame++;
 
                     // Screen shake
@@ -18201,6 +18408,18 @@ const SHIP_IMAGE_DATA = {
                     allShips.forEach(s => {
                         if (!s.dead || s.drifting) drawShip(s);
                     });
+
+                    // Broadcast live ship state for spectators (throttled — every 6 frames
+                    // is plenty for a spectator view and keeps room traffic light).
+                    if (pvpRoomId && frame % 6 === 0) {
+                        window.MP.sendShipState({
+                            canvasW: W, canvasH: H, // so the spectator can scale positions correctly regardless of their own canvas size
+                            ships: allShips.filter(s => !s.dead || s.drifting).map(s => ({
+                                x: s.x, y: s.y, hp: s.hp, maxHp: s.maxHp, side: s.side,
+                                cls: s.cls, image: s.image, spriteFacing: s.spriteFacing,
+                            })),
+                        });
+                    }
 
                     // Kill feed (top-right corner)
                     ctx.save();
@@ -20260,9 +20479,19 @@ const SHIP_IMAGE_DATA = {
                 this.worldBoss.phase         = 1;
                 this.worldBoss.totalDmgDealt = 0;
                 this.worldBoss.participants  = {};
+                this.worldBoss.instanceId    = null; // set below once/if the MP backend confirms creation
                 document.body.classList.add('world-boss-active');
                 this.showWorldBossModal();
                 this._startBossCounterDamage();
+                // Create a shared MP boss instance so every contributing player's client
+                // reports damage against the same HP pool (see _executeBossWave) and can
+                // join the same live "⚔ Live View" room. Best-effort — the boss fight
+                // works fine locally even if this fails or MP isn't configured.
+                if (window.MP && window.MP.token) {
+                    window.MP.createBoss('The Fracture Herald', this.worldBoss.maxHp)
+                        .then((boss) => { this.worldBoss.instanceId = boss.id; })
+                        .catch((e) => console.warn('[MP] could not create shared boss instance (playing local-only):', e.message));
+                }
                 // Start boss combat music
                 if (window.audioManager) window.audioManager.playBossMusic();
                 // Announce in guild chat
@@ -20476,6 +20705,8 @@ const SHIP_IMAGE_DATA = {
                         <span id="bossDmgText">Your damage: 0</span>
                     </div>
                         </div>
+                        <button onclick="window.game.openBossBattleView(window.game.worldBoss.instanceId || 'fracture-herald-local', 'The Fracture Herald', null)"
+                            style="background:rgba(255,74,74,0.15);border:1px solid #ff4a4a;border-radius:4px;color:#ff4a4a;padding:4px 8px;cursor:pointer;font-size:11px;flex-shrink:0;align-self:flex-start;margin-right:6px;">⚔ Live View</button>
                         <button onclick="document.getElementById('worldBossHUD').style.display='none'"
                             style="background:transparent;border:1px solid #333;border-radius:4px;color:#8ba3c7;padding:4px 8px;cursor:pointer;font-size:11px;flex-shrink:0;align-self:flex-start;">▲</button>
                     </div>
@@ -20647,6 +20878,15 @@ const SHIP_IMAGE_DATA = {
                 this.worldBoss.participants[me] = (this.worldBoss.participants[me] || 0) + dmg;
                 this.worldBoss.totalDmgDealt = (this.worldBoss.totalDmgDealt || 0) + dmg;
                 this.worldBoss.currentHp = Math.max(0, this.worldBoss.currentHp - dmg);
+
+                // Report damage to the shared MP boss instance (if one was created for
+                // this fight — see spawnWorldBoss) so every contributing player's client
+                // sees the same HP pool, not just their own local tally. Best-effort:
+                // never lets a slow/offline backend interrupt the local combat loop.
+                if (window.MP && window.MP.token && this.worldBoss.instanceId) {
+                    window.MP.damageBoss(this.worldBoss.instanceId, dmg).catch((e) =>
+                        console.warn('[MP] boss damage report failed (local damage still applied):', e.message));
+                }
 
                 // Fleet losses per wave: 3–8% (scales with phase)
                 const atkLossRate = 0.03 + (this.worldBoss.phase - 1) * 0.025 + Math.random() * 0.02;
@@ -22846,6 +23086,298 @@ const SHIP_IMAGE_DATA = {
                 if (this.artifactUseHistory.length > 15) this.artifactUseHistory = this.artifactUseHistory.slice(0, 15);
             }
 
+            // Re-run the battle canvas animation for a past, already-resolved battle log entry.
+            // Reuses animateBattle() itself — it only ever needed (isVictory, attackForce, target,
+            // attackPower, defense) to drive the visuals, and battle log entries now store all of
+            // that (plus a defenderSnapshot of the garrison at the time) via _recordBattle. This is
+            // a fresh cosmetic run of the animation, not a frame-exact reproduction — individual
+            // ship deaths/impacts are re-rolled, but the fleets, outcome, and result match the log.
+            replayBattle(id) {
+                const record = (this.battleHistory || []).find(b => b.id === id);
+                if (!record) { this.showNotification('⚠️ Replay data not found for that battle.'); return; }
+                document.getElementById('battleReplayModal')?.remove();
+                const win = record.outcome === 'victory';
+                const color = win ? '#00ff88' : '#ff4a4a';
+                const modal = document.createElement('div');
+                modal.id = 'battleReplayModal';
+                modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.93);z-index:10030;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+                modal.innerHTML = `<div style="width:90%;max-width:900px;text-align:center;position:relative;">
+                    <button onclick="document.getElementById('battleReplayModal').remove()"
+                        style="position:absolute;top:-30px;right:0;width:50px;height:50px;background:#ff3366;border:2px solid #ff4a4a;border-radius:50%;color:white;font-size:24px;cursor:pointer;font-weight:900;z-index:10031;">✖</button>
+                    <div style="font-size:14px;color:#8ba3c7;margin-bottom:12px;letter-spacing:2px;">▶ REPLAY — Battle at <span style="color:#e8f0ff;font-weight:700;">${record.target}</span> &nbsp;·&nbsp; <span style="color:${color};font-weight:700;">${record.outcome.toUpperCase()}</span></div>
+                    <div id="battleVisualization" style="width:100%;height:420px;background:#020510;border-radius:12px;overflow:hidden;border:2px solid ${color};"></div>
+                    <div style="margin-top:14px;">
+                        <button onclick="document.getElementById('battleReplayModal').remove()" style="padding:10px 24px;background:rgba(255,255,255,0.07);border:2px solid rgba(255,255,255,0.2);border-radius:8px;color:#8ba3c7;font-weight:700;cursor:pointer;font-size:13px;">✖ Close Replay</button>
+                    </div>
+                </div>`;
+                document.body.appendChild(modal);
+                // A minimal stand-in "target" — animateBattle only reads .name and .botGarrison off it.
+                const fakeTarget = { name: record.target, botGarrison: record.defenderSnapshot || {} };
+                this.animateBattle(win, record.attackForce || {}, fakeTarget, record.attackPower || 0, record.defense || 0);
+            }
+
+            // ── Live Boss/Guild Boss Battle View ──────────────────────────────
+            // Boss sprite anchored at canvas center; every contributing player's
+            // fleet (yours + anyone else currently in the same MP room) arranged
+            // in a ring around it, all noses pointed inward at the boss. Driven
+            // live by MP.sendShipState()/onShipState() when the multiplayer
+            // backend is connected; degrades gracefully to solo (just your own
+            // fleet in the ring) when MP is offline/not configured — this never
+            // blocks attacking the boss, it's a view layered on top.
+            openBossBattleView(bossId, bossName, bossImage) {
+                document.getElementById('bossBattleModal')?.remove();
+                const modal = document.createElement('div');
+                modal.id = 'bossBattleModal';
+                modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.94);z-index:10040;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+                modal.innerHTML = `<div style="width:92%;max-width:960px;text-align:center;position:relative;">
+                    <button onclick="window.game.closeBossBattleView()"
+                        style="position:absolute;top:-34px;right:0;width:50px;height:50px;background:#ff3366;border:2px solid #ff4a4a;border-radius:50%;color:#fff;font-size:22px;cursor:pointer;font-weight:900;z-index:10041;">✖</button>
+                    <div style="font-size:13px;color:#8ba3c7;margin-bottom:10px;letter-spacing:2px;">⚔ LIVE BOSS BATTLE — <span style="color:#ff9500;font-weight:700;">${bossName}</span></div>
+                    <div id="bossBattleCanvasWrap" style="width:100%;height:460px;background:#020510;border-radius:12px;overflow:hidden;border:2px solid #ff4a4a;position:relative;"></div>
+                    <div id="bossBattleParticipants" style="margin-top:8px;font-size:11px;color:#8ba3c7;">Fighting alongside: you</div>
+                    ${window.MP ? '' : '<div style="margin-top:4px;font-size:10px;color:#665;">Multiplayer backend not connected — showing your fleet only.</div>'}
+                </div>`;
+                document.body.appendChild(modal);
+
+                const wrap = document.getElementById('bossBattleCanvasWrap');
+                const canvas = document.createElement('canvas');
+                canvas.width = wrap.clientWidth || 900;
+                canvas.height = 460;
+                canvas.style.cssText = 'width:100%;height:100%;display:block;';
+                wrap.appendChild(canvas);
+                const ctx = canvas.getContext('2d');
+
+                // participants: Map<id, {username, ships:[{type,image}], isSelf}>
+                const participants = new Map();
+                const myId = 'me';
+                participants.set(myId, {
+                    username: this.playerData?.username || 'You',
+                    ships: this._collectLocalFleetForBossView(),
+                    isSelf: true,
+                });
+
+                const roomId = `boss:${bossId}`;
+                let joined = false;
+                const listeners = [];
+                const renderParticipantList = () => {
+                    const el = document.getElementById('bossBattleParticipants');
+                    if (el) el.textContent = 'Fighting alongside: ' + [...participants.values()].map(p => p.username).join(', ');
+                };
+
+                if (window.MP && window.MP.token) {
+                    window.MP.connect().then(() => {
+                        window.MP.joinRoom(roomId, 'boss');
+                        joined = true;
+                    }).catch((e) => console.warn('[MP] could not join boss room:', e.message));
+
+                    const onJoined = (rid, members) => {
+                        if (rid !== roomId) return;
+                        members.forEach((m) => {
+                            if (m.playerId && !participants.has(m.playerId)) participants.set(m.playerId, { username: m.username, ships: [] });
+                        });
+                        renderParticipantList();
+                    };
+                    const onMemberJoined = (playerId, username) => {
+                        if (!participants.has(playerId)) participants.set(playerId, { username, ships: [] });
+                        renderParticipantList();
+                    };
+                    const onMemberLeft = (playerId) => { participants.delete(playerId); renderParticipantList(); };
+                    const onShipState = (playerId, username, payload) => {
+                        participants.set(playerId, { username, ships: (payload && payload.ships) || [] });
+                        renderParticipantList();
+                    };
+                    window.MP.onRoomJoined(onJoined);
+                    window.MP.onMemberJoined(onMemberJoined);
+                    window.MP.onMemberLeft(onMemberLeft);
+                    window.MP.onShipState(onShipState);
+                    listeners.push(['room_joined', onJoined], ['member_joined', onMemberJoined], ['member_left', onMemberLeft], ['ship_state', onShipState]);
+                }
+
+                const broadcastInterval = setInterval(() => {
+                    if (joined) window.MP.sendShipState({ ships: participants.get(myId).ships });
+                }, 400);
+
+                let frame = 0;
+                const bossImg = bossImage ? getShipImage(bossImage) : null;
+                const raf = () => {
+                    frame++;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    const cx = canvas.width / 2, cy = canvas.height / 2;
+
+                    // ── Boss at center ──
+                    const bossSz = 90;
+                    if (bossImg) {
+                        ctx.save();
+                        ctx.shadowColor = '#ff4a4a'; ctx.shadowBlur = 14;
+                        ctx.drawImage(bossImg, cx - bossSz, cy - bossSz, bossSz * 2, bossSz * 2);
+                        ctx.restore();
+                    } else {
+                        ctx.beginPath(); ctx.arc(cx, cy, bossSz * 0.6, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(255,74,74,0.3)'; ctx.strokeStyle = '#ff4a4a'; ctx.lineWidth = 3;
+                        ctx.fill(); ctx.stroke();
+                    }
+                    ctx.fillStyle = '#ff9500'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+                    ctx.fillText(bossName, cx, cy + bossSz + 22);
+
+                    // ── Ring of every participant's fleet, facing inward ──
+                    const ids = [...participants.keys()];
+                    const ringRadius = Math.min(canvas.width, canvas.height) * 0.38;
+                    ids.forEach((pid, i) => {
+                        const p = participants.get(pid);
+                        const baseAngle = (i / ids.length) * Math.PI * 2 + frame * 0.002;
+                        const ships = (p.ships || []).slice(0, 8);
+                        ships.forEach((ship, si) => {
+                            const spread = 0.28;
+                            const angle = baseAngle + (si - (ships.length - 1) / 2) * (spread / Math.max(1, ships.length));
+                            const x = cx + Math.cos(angle) * ringRadius;
+                            const y = cy + Math.sin(angle) * ringRadius;
+                            const facing = angle + Math.PI; // point back toward the boss at center
+
+                            ctx.save();
+                            ctx.translate(x, y);
+                            const img = ship.image ? getShipImage(ship.image) : null;
+                            const sz = 22;
+                            if (img) {
+                                ctx.rotate(facing + Math.PI / 2); // sprite art noses "up" by default
+                                ctx.shadowColor = p.isSelf ? '#00d9ff' : '#00ff88'; ctx.shadowBlur = 6;
+                                ctx.drawImage(img, -sz, -sz, sz * 2, sz * 2);
+                            } else {
+                                ctx.rotate(facing + Math.PI / 2);
+                                ctx.fillStyle = p.isSelf ? '#00d9ff' : '#00ff88';
+                                ctx.beginPath();
+                                ctx.moveTo(0, -sz); ctx.lineTo(sz * 0.7, sz * 0.7); ctx.lineTo(-sz * 0.7, sz * 0.7);
+                                ctx.closePath(); ctx.fill();
+                            }
+                            ctx.restore();
+                        });
+                    });
+
+                    modal._raf = requestAnimationFrame(raf);
+                };
+                raf();
+
+                modal._cleanup = () => {
+                    clearInterval(broadcastInterval);
+                    if (modal._raf) cancelAnimationFrame(modal._raf);
+                    if (window.MP && joined) window.MP.leaveRoom();
+                };
+            }
+
+            closeBossBattleView() {
+                const modal = document.getElementById('bossBattleModal');
+                if (modal) { if (modal._cleanup) modal._cleanup(); modal.remove(); }
+            }
+
+            // ── Live PvP Spectate ──────────────────────────────────────────────
+            // Watch another player's battle as it happens, relayed via the same
+            // pvp:<username> room that animateBattle() broadcasts into while a
+            // fight is running (see there). Two-sided "vs" layout — attacker's
+            // ships on the left facing right, defender's on the right facing
+            // left — mirroring the normal single-player battle animation, just
+            // driven by live ship_state broadcasts instead of a local sim.
+            spectatePvPBattle(targetUsername) {
+                if (!window.MP || !window.MP.token) {
+                    this.showNotification('⚠️ Connect to the multiplayer server to spectate live battles.');
+                    return;
+                }
+                document.getElementById('pvpSpectateModal')?.remove();
+                const modal = document.createElement('div');
+                modal.id = 'pvpSpectateModal';
+                modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.94);z-index:10040;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+                modal.innerHTML = `<div style="width:92%;max-width:960px;text-align:center;position:relative;">
+                    <button onclick="window.game.closePvPSpectate()"
+                        style="position:absolute;top:-34px;right:0;width:50px;height:50px;background:#ff3366;border:2px solid #ff4a4a;border-radius:50%;color:#fff;font-size:22px;cursor:pointer;font-weight:900;z-index:10041;">✖</button>
+                    <div style="font-size:13px;color:#8ba3c7;margin-bottom:10px;letter-spacing:2px;">👁 SPECTATING — <span style="color:#00d9ff;font-weight:700;">${targetUsername}</span></div>
+                    <div id="pvpSpectateCanvasWrap" style="width:100%;height:420px;background:#020510;border-radius:12px;overflow:hidden;border:2px solid #00d9ff;position:relative;"></div>
+                    <div id="pvpSpectateStatus" style="margin-top:8px;font-size:11px;color:#8ba3c7;">Waiting for a live fight to start…</div>
+                </div>`;
+                document.body.appendChild(modal);
+
+                const wrap = document.getElementById('pvpSpectateCanvasWrap');
+                const canvas = document.createElement('canvas');
+                canvas.width = wrap.clientWidth || 900;
+                canvas.height = 420;
+                canvas.style.cssText = 'width:100%;height:100%;display:block;';
+                wrap.appendChild(canvas);
+                const ctx = canvas.getContext('2d');
+
+                const roomId = `pvp:${targetUsername}`;
+                let latestShips = [];
+                let latestBroadcastSize = { w: 860, h: 300 };
+                let joined = false;
+                const statusEl = () => document.getElementById('pvpSpectateStatus');
+
+                const onShipState = (playerId, username, payload) => {
+                    if (username !== targetUsername) return; // room may include other spectators too
+                    latestShips = (payload && payload.ships) || [];
+                    latestBroadcastSize = { w: (payload && payload.canvasW) || 860, h: (payload && payload.canvasH) || 300 };
+                    if (statusEl()) statusEl().textContent = `Live — ${latestShips.length} ships`;
+                };
+                window.MP.connect()
+                    .then(() => { window.MP.joinRoom(roomId, 'pvp'); joined = true; })
+                    .catch((e) => { if (statusEl()) statusEl().textContent = 'Could not connect: ' + e.message; });
+                window.MP.onShipState(onShipState);
+
+                let raf;
+                const draw = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    latestShips.forEach((s) => {
+                        const x = (s.x / latestBroadcastSize.w) * canvas.width;
+                        const y = (s.y / latestBroadcastSize.h) * canvas.height;
+                        const dir = s.side === 'attacker' ? 1 : -1;
+                        const sz = Math.max(6, Math.min(30, (s.maxHp ? Math.sqrt(s.maxHp) / 4 : 12)));
+                        const img = s.image ? getShipImage(s.image) : null;
+                        ctx.save();
+                        ctx.translate(x, y);
+                        if (img) {
+                            if (s.spriteFacing === 'left') { if (dir === 1) ctx.scale(-1, 1); }
+                            else { ctx.rotate(dir * Math.PI / 2); }
+                            ctx.shadowColor = s.side === 'attacker' ? '#00d9ff' : '#ff4a4a';
+                            ctx.shadowBlur = 6;
+                            ctx.drawImage(img, -sz * 1.3, -sz * 1.3, sz * 2.6, sz * 2.6);
+                        } else {
+                            ctx.fillStyle = s.side === 'attacker' ? '#00d9ff' : '#ff4a4a';
+                            ctx.beginPath();
+                            ctx.moveTo(dir * sz, 0); ctx.lineTo(-dir * sz * 0.6, sz * 0.6); ctx.lineTo(-dir * sz * 0.6, -sz * 0.6);
+                            ctx.closePath(); ctx.fill();
+                        }
+                        ctx.restore();
+                    });
+                    raf = requestAnimationFrame(draw);
+                };
+                draw();
+
+                modal._cleanup = () => {
+                    if (raf) cancelAnimationFrame(raf);
+                    if (joined) window.MP.leaveRoom();
+                };
+            }
+
+            closePvPSpectate() {
+                const modal = document.getElementById('pvpSpectateModal');
+                if (modal) { if (modal._cleanup) modal._cleanup(); modal.remove(); }
+            }
+
+            // Best-effort snapshot of the player's fleet for the boss-ring view —
+            // visual flourish, not combat data, so failures here are swallowed
+            // rather than allowed to break the boss screen.
+            _collectLocalFleetForBossView() {
+                const ships = [];
+                try {
+                    (this.fleets || []).forEach((fleet) => {
+                        (fleet.stacks || []).forEach((stack) => {
+                            const def = this.ships?.[stack.shipType];
+                            if (!def) return;
+                            ships.push({
+                                type: stack.shipType,
+                                image: def.battleSprite || def.image || SHIP_IMAGE_LOOKUP[stack.shipType]?.image || null,
+                            });
+                        });
+                    });
+                } catch (e) { /* best-effort — never block the boss view over a rendering hiccup */ }
+                return ships.slice(0, 8);
+            }
+
             openIntelReports() {
                 document.getElementById('intelReportsPanel')?.remove();
                 const panel = document.createElement('div');
@@ -22902,6 +23434,7 @@ const SHIP_IMAGE_DATA = {
                                 <span style="font-size:20px;">${icon}</span>
                                 <div style="flex:1;"><div style="font-size:13px;font-weight:700;color:${color};">${b.outcome.toUpperCase()} — ${b.target}</div><div style="font-size:11px;color:#8ba3c7;">${date} &nbsp;·&nbsp; ATK ${(b.attackPower||0).toLocaleString()} vs DEF ${(b.defense||0).toLocaleString()}</div></div>
                                 <div style="display:flex;gap:12px;font-size:11px;"><span style="color:#8ba3c7;">✈️ ${sent}</span><span style="color:#ff4a4a;">💀 ${lost}</span><span style="color:#ff9500;">🎯 ${kills}</span></div>
+                                <button onclick="event.stopPropagation();window.game.replayBattle(${b.id})" style="padding:5px 12px;background:rgba(0,217,255,0.1);border:1px solid rgba(0,217,255,0.4);border-radius:5px;color:#00d9ff;cursor:pointer;font-size:11px;font-weight:700;white-space:nowrap;">▶ Replay</button>
                                 <span style="color:#555;">▼</span>
                             </div>
                             <div style="display:none;padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);">
@@ -24659,8 +25192,35 @@ const SHIP_IMAGE_DATA = {
                 console.log('❌ Missing credentials');
                 return;
             }
-            
-            console.log('🔐 Attempting login:', username);
+
+            // Try the multiplayer backend first (real account, persistent state,
+            // live battle rooms). Falls through to the local-only auth.db path
+            // below if MP isn't configured, unreachable, or the account only
+            // exists locally (e.g. testers who played before the backend existed).
+            if (MP_CONFIG.enabled) {
+                MP.login(username, password).then(async (mpPlayer) => {
+                    console.log('✅ MP login successful!', mpPlayer.username);
+                    await mpConnectSocket();
+                    const { state } = await MP.loadState().catch(() => ({ state: {} }));
+                    startGameSession({
+                        username: mpPlayer.username,
+                        race: mpPlayer.race,
+                        accountType: normalizeAccountType(mpPlayer.accountType),
+                        sessionToken: MP.token,
+                        ...state, // saved fleets/planets/resources/etc, if any
+                    });
+                }).catch((mpErr) => {
+                    console.warn('[MP] login failed, falling back to local auth:', mpErr.message);
+                    handleLoginLocal(username, password, errorDiv);
+                });
+                return;
+            }
+
+            handleLoginLocal(username, password, errorDiv);
+        }
+
+        function handleLoginLocal(username, password, errorDiv) {
+            console.log('🔐 Attempting local login:', username);
             
             if (!window.auth || !window.auth.db) {
                 errorDiv.textContent = 'System not ready. Please refresh page.';
@@ -24679,17 +25239,20 @@ const SHIP_IMAGE_DATA = {
                 console.error('❌ Auth failed:', result.error);
                 return;
             }
-            
+
             console.log('✅ Authentication successful!');
+            startGameSession(result.player);
+        }
+
+        // Shared "enter the game" sequence used by both MP and local login/register —
+        // kept as one function so the MP wiring above doesn't duplicate/drift from
+        // the existing startup logic.
+        function startGameSession(player) {
             console.log('🎮 Starting game...');
-            
-            // SUCCESS - start game directly (bypass potentially broken enterGame)
             try {
-                // Hide login
                 console.log('1️⃣ Hiding login screen...');
                 document.getElementById('loginScreen').style.display = 'none';
                 
-                // Show game
                 console.log('2️⃣ Showing game container...');
                 const container = document.querySelector('.container');
                 if (!container) {
@@ -24697,31 +25260,28 @@ const SHIP_IMAGE_DATA = {
                 }
                 container.style.display = 'grid';
                 
-                // Register with server (with timeout protection)
                 console.log('3️⃣ Registering with server...');
                 if (window.gameServer) {
                     try {
-                        const serverResult = gameServer.registerPlayer(result.sessionToken, result.player);
+                        const serverResult = gameServer.registerPlayer(player.sessionToken, player);
                         console.log('Server registration result:', serverResult);
                     } catch (e) {
                         console.warn('Server registration failed (non-critical):', e);
                     }
                 }
                 
-                // Initialize game
                 console.log('4️⃣ Creating game instance...');
                 if (window.game && typeof window.game.destroy === 'function') { window.game.destroy(); }
                     window.game = new Game();
                 
                 console.log('5️⃣ Loading player data...');
-                window.game.loadPlayerData(result.player);
+                window.game.loadPlayerData(player);
                 
-                // Open chat
                 console.log('6️⃣ Opening chat...');
                 setTimeout(() => {
                     if (window.chatManager) {
                         chatManager.openChat();
-                        chatManager.addMessage('SYSTEM', `Welcome back, ${result.player.username}!`, 'system');
+                        chatManager.addMessage('SYSTEM', `Welcome back, ${player.username}!`, 'system');
                     }
                 }, 500);
                 
@@ -24774,10 +25334,30 @@ const SHIP_IMAGE_DATA = {
                 errorDiv.style.display = 'block';
                 return;
             }
-            
+
             console.log('📝 Creating account:', username);
-            
-            const result = window.auth.db.createPlayer(username, email, password, window.auth.selectedRace);
+
+            // Try the multiplayer backend first — this is what makes the account
+            // real/cross-device instead of trapped in this browser's localStorage.
+            // Falls through to the local-only path if MP isn't configured/reachable,
+            // or the server rejects it (e.g. duplicate username), same as login.
+            if (MP_CONFIG.enabled) {
+                MP.register(username, password, email, window.auth.selectedRace).then(async (mpPlayer) => {
+                    console.log('✅ MP account created!', mpPlayer.username);
+                    await mpConnectSocket();
+                    startGameSession({ username: mpPlayer.username, race: mpPlayer.race, accountType: normalizeAccountType(mpPlayer.accountType), sessionToken: MP.token });
+                }).catch((mpErr) => {
+                    console.warn('[MP] register failed, falling back to local auth:', mpErr.message);
+                    handleRegisterLocal(username, email, password, window.auth.selectedRace, errorDiv);
+                });
+                return;
+            }
+
+            handleRegisterLocal(username, email, password, window.auth.selectedRace, errorDiv);
+        }
+
+        function handleRegisterLocal(username, email, password, race, errorDiv) {
+            const result = window.auth.db.createPlayer(username, email, password, race);
             console.log('📝 Create result:', result);
             
             if (!result.success) {
@@ -24787,50 +25367,8 @@ const SHIP_IMAGE_DATA = {
             }
             
             console.log('✅ Account created! Auto-logging in...');
-            
-            // SUCCESS - auto login and start game
             const loginResult = window.auth.db.authenticatePlayer(username, password);
-            
-            try {
-                // Hide login
-                document.getElementById('loginScreen').style.display = 'none';
-                
-                // Show game
-                const container = document.querySelector('.container');
-                if (!container) {
-                    throw new Error('Game container not found');
-                }
-                container.style.display = 'grid';
-                
-                // Register with server (with timeout protection)
-                if (window.gameServer) {
-                    try {
-                        gameServer.registerPlayer(loginResult.sessionToken, loginResult.player);
-                    } catch (e) {
-                        console.warn('Server registration failed (non-critical):', e);
-                    }
-                }
-                
-                // Initialize game
-                if (window.game && typeof window.game.destroy === 'function') { window.game.destroy(); }
-                    window.game = new Game();
-                window.game.loadPlayerData(loginResult.player);
-                
-                // Open chat
-                setTimeout(() => {
-                    if (window.chatManager) {
-                        chatManager.openChat();
-                        chatManager.addMessage('SYSTEM', `Welcome ${loginResult.player.username}!`, 'system');
-                    }
-                }, 500);
-                
-                console.log('🎮 GAME STARTED!');
-                
-            } catch (error) {
-                console.error('❌ Game start failed:', error);
-                alert('Account created but failed to start game: ' + error.message);
-                document.getElementById('loginScreen').style.display = 'flex';
-            }
+            startGameSession(loginResult.player);
         }
         
         function closeAccountModal() {
@@ -27478,30 +28016,28 @@ const SHIP_IMAGE_DATA = {
         }
     </style>
     <script>
-// AUTO-START GAME - No login required
-window.addEventListener('DOMContentLoaded', () => {
-    console.log('🎮 Auto-starting Fractured Universe...');
+// GUEST PLAY — explicit opt-in via the "Play as guest" link on the login
+// screen (previously this ran automatically on page load and skipped login
+// entirely; now the login screen is the default so real accounts/backend
+// wiring actually get used).
+window.playAsGuest = function() {
+    console.log('🎭 Starting guest session (no account, progress will not be saved)...');
 
-    // ── Race Selection Popup ──────────────────────────────────────
-    // Show race picker before anything else loads. Uses a minimal
-    // temporary Game instance just to get access to showRaceSelectionPopup.
     const launchWithRace = (chosenRace) => {
         try {
             const testPlayer = {
-                username: 'TestCommander',
+                username: 'Guest' + Math.floor(Math.random() * 9000 + 1000),
                 race: chosenRace,
-                accountType: 'Admin',
+                accountType: 'Guest',
                 credits: 100000,
                 resources: { metal: 50000, he3: 25000, food: 30000 }
             };
 
-            // Show the game container
             const container = document.querySelector('.container');
             if (container) container.style.display = 'grid';
             const loginScreen = document.getElementById('loginScreen');
             if (loginScreen) loginScreen.style.display = 'none';
 
-            // Create game instance
             if (window.game && typeof window.game.destroy === 'function') { window.game.destroy(); }
             window.game = new Game();
             window.game.loadPlayerData({
@@ -27522,44 +28058,35 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Give test player Horizon Coins for testing
             window.game.horizonCoins = 5000;
             window.game.updateUI();
-
-            // CRITICAL: Initialize the game to start intervals
-            console.log('🎮 Initializing game systems...');
             window.game.init();
 
-            // Open chat after short delay
             setTimeout(() => {
                 if (window.chatManager) {
                     chatManager.openChat();
-                    chatManager.addMessage('SYSTEM', `Welcome to Fractured Universe, ${testPlayer.username}!`, 'system');
-                    chatManager.addMessage('SYSTEM', 'This is a test version with no login required.', 'system');
+                    chatManager.addMessage('SYSTEM', `Welcome, ${testPlayer.username}!`, 'system');
+                    chatManager.addMessage('SYSTEM', "You're playing as a guest — progress won't be saved. Register an account from the login screen to keep it.", 'system');
                     chatManager.addMessage('SYSTEM', `🎭 You are playing as the ${chosenRace}.`, 'system');
-                    chatManager.addMessage('SYSTEM', '💎 You have 5,000 Horizon Coins to test the Commander System!', 'system');
-                    chatManager.addMessage('SYSTEM', '⭐ Click "COMMANDERS" in the header to access the new system.', 'system');
                 }
             }, 1000);
 
-            console.log('✅ Game started successfully as', chosenRace);
+            console.log('✅ Guest session started as', chosenRace);
 
         } catch (error) {
-            console.error('❌ Failed to start game:', error);
-            console.error('Stack:', error.stack);
+            console.error('❌ Failed to start guest session:', error);
             alert('Failed to start game: ' + error.message);
         }
     };
 
-    // Spin up a bare Game instance solely to access showRaceSelectionPopup
     try {
         const tempGame = new Game();
         tempGame.showRaceSelectionPopup(null, true, launchWithRace);
-    } catch(e) {
+    } catch (e) {
         console.error('Race popup failed, falling back to Terran Empire:', e);
         launchWithRace('Terran Empire');
     }
-});
+};
     </script>
     
     <!-- ========== COMMANDER SYSTEM HTML ========== -->
