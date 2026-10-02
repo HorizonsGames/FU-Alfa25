@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
@@ -31,6 +32,13 @@ app.use('/api/auth', authRoutes);
 app.use('/api', stateRoutes);
 app.use('/api', guildRoutes);
 app.use('/api', bossRoutes);
+
+// Serve the game client (index.html, assets/, ship art, music, etc.) from this
+// same app/process/port — one Heroku deploy serves both the game and the API,
+// so the client never needs a separate backend URL configured: it just talks
+// to its own origin (see MP_CONFIG in index.html). Mounted after the /api
+// routes so an API path is never shadowed by a same-named static file.
+app.use(express.static(path.join(__dirname), { maxAge: '1d' }));
 
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
     console.error('[unhandled]', err);
