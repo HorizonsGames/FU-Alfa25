@@ -6225,7 +6225,20 @@
         // every MP call below is wrapped so a missing/offline backend never
         // breaks local play, it just silently stays in local-only mode.
         const MP_CONFIG = {
-            serverUrl: '', // <-- fill in after `heroku create` / deploy
+            // Defaults to same-origin: server.js serves this exact file alongside
+            // the API/WebSocket from one Heroku app, so once deployed there, the
+            // game automatically talks to its own backend — no URL to fill in.
+            // Falls back to disabled (local-only play) when opened as a bare
+            // file:// page or anywhere else with no real HTTP origin to call.
+            // Override for testing via: localStorage.setItem('fu_mp_server_override', 'https://...')
+            serverUrl: (function () {
+                try {
+                    const override = localStorage.getItem('fu_mp_server_override');
+                    if (override) return override;
+                } catch (e) { /* localStorage unavailable (e.g. private browsing) — ignore */ }
+                if (!window.location || !/^https?:$/.test(window.location.protocol)) return '';
+                return window.location.origin;
+            })(),
             get enabled() { return !!this.serverUrl; },
         };
         const MP = (typeof MPClient !== 'undefined' && MP_CONFIG.serverUrl)
@@ -24706,8 +24719,8 @@ const SHIP_IMAGE_DATA = {
             // ===== PLANET/CLUSTER NAMING METHODS =====
             
             renamePlanet(planetId) {
-                const planet = this.planets.find(p => p.id === planetId);
-                if (!planet || planet.owner !== this.selectedRace.name) {
+                const planet = this.planets.find(p => Number(p.id) === Number(planetId));
+                if (!planet || !this._isMyPlanet(planet)) {
                     this.showNotification('⚠️ You can only rename your own planets');
                     return;
                 }
@@ -24749,7 +24762,7 @@ const SHIP_IMAGE_DATA = {
             confirmRenamePlanet(planetId, newName) {
                 if (!newName || !newName.trim()) return;
                 
-                const planet = this.planets.find(p => p.id === planetId);
+                const planet = this.planets.find(p => Number(p.id) === Number(planetId));
                 if (!planet) return;
                 
                 planet.customName = newName.trim();
@@ -24762,7 +24775,7 @@ const SHIP_IMAGE_DATA = {
             }
             
             renameCluster(clusterId) {
-                const cluster = this.clusters.find(c => c.id === clusterId);
+                const cluster = this.clusters.find(c => Number(c.id) === Number(clusterId));
                 if (!cluster) return;
                 document.getElementById('renameClusterModal')?.remove();
                 const currentName = cluster.name;
@@ -24802,7 +24815,7 @@ const SHIP_IMAGE_DATA = {
             confirmRenameCluster(clusterId, newName) {
                 if (!newName || !newName.trim()) return;
                 
-                const cluster = this.clusters.find(c => c.id === clusterId);
+                const cluster = this.clusters.find(c => Number(c.id) === Number(clusterId));
                 if (!cluster) return;
                 
                 cluster.customName = newName.trim();
